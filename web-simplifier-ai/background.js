@@ -21,8 +21,13 @@ function getAPIUrl(model) {
 }
 
 // Free-tier protections
-const MIN_API_CALL_INTERVAL_MS = 6000; // hard cooldown to reduce 429s
+const MIN_API_CALL_INTERVAL_MS = 12000; // hard cooldown to reduce 429s (free-tier safe)
+const LAST_API_CALL_AT_STORAGE_KEY = 'lastApiCallAt';
 let lastApiCallAt = 0;
+
+// Strict global serialization: ensures only one Gemini request executes at a time
+// (prevents race conditions and duplicate calls from UI events)
+let apiQueue = Promise.resolve();
 
 // Dedupe identical in-flight requests (prevents double calls from double-clicks)
 const inFlightRequests = new Map();
@@ -55,6 +60,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // Sleep helper
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function enqueueGeminiApiCall(taskFn) {
+  const task = apiQueue.then(taskFn);
+  // Keep the queue alive even if the task fails.
+  apiQueue = task.catch(() => undefined);
+  return task;
 }
 
 // Call Gemini API (single request; no retries)
@@ -99,26 +111,34 @@ async function handleGeminiRequest(content, title, apiKey, model) {
   if (existing) {
     return existing;
   }
-
-  // Hard cooldown in the background script (last line of defense)
-  // For the free tier, it's better to WAIT than to fail fast.
-  const now = Date.now();
-  const waitMs = MIN_API_CALL_INTERVAL_MS - (now - lastApiCallAt);
-  if (waitMs > 0) {
-    await sleep(waitMs);
-  }
   
   const apiUrl = getAPIUrl(selectedModel);
   
   // Wrap the whole request in a single promise so we can dedupe.
-  const promise = (async () => {
+  const promise = enqueueGeminiApiCall(async () => {
     // Add timeout to prevent hanging requests
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
     let response;
     try {
-      lastApiCallAt = Date.now();
+      // Hard cooldown (last line of defense) - persisted across service worker restarts.
+      // Read from storage immediately before the API call to avoid races.
+      const stored = await chrome.storage.local.get(LAST_API_CALL_AT_STORAGE_KEY);
+      const storedLast = Number(stored?.[LAST_API_CALL_AT_STORAGE_KEY]) || 0;
+      const effectiveLast = Math.max(storedLast, lastApiCallAt);
+
+      const now = Date.now();
+      const waitMs = MIN_API_CALL_INTERVAL_MS - (now - effectiveLast);
+      if (waitMs > 0) {
+        await sleep(waitMs);
+      }
+
+      // Update storage immediately before calling fetch to prevent concurrent bypass.
+      const callAt = Date.now();
+      lastApiCallAt = callAt;
+      await chrome.storage.local.set({ [LAST_API_CALL_AT_STORAGE_KEY]: callAt });
+
       response = await fetch(`${apiUrl}?key=${apiKey}`, {
         method: 'POST',
         headers: {
@@ -187,7 +207,7 @@ async function handleGeminiRequest(content, title, apiKey, model) {
 
     memoryCache.set(requestKey, { text, timestamp: Date.now() });
     return text;
-  })();
+  });
 
   inFlightRequests.set(requestKey, promise);
   try {
