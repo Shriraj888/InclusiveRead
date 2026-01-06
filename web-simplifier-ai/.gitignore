@@ -1,0 +1,14 @@
+# Environment variables (contains API keys)
+.env
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+.vscode/
+
+# Logs
+*.log

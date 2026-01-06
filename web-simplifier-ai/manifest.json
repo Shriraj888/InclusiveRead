@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Web Simplifier AI",
+  "version": "1.0.0",
+  "description": "Simplify any webpage using Google Gemini AI - get summaries, key points, and easy-to-read explanations",
+  
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  
+  "host_permissions": [
+    "https://generativelanguage.googleapis.com/*"
+  ],
+  
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "Web Simplifier AI"
+  },
+  
+  "background": {
+    "service_worker": "background.js"
+  },
+  
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  
+  "web_accessible_resources": [
+    {
+      "resources": ["lib/Readability.js", "styles/injected.css"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
