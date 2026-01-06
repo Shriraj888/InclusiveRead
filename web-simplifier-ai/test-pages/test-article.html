@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Test Article — Web Simplifier AI</title>
+  <style>
+    :root { color-scheme: light; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; line-height: 1.5; }
+    header, nav, aside, footer { padding: 12px 16px; background: #f6f6f6; border-bottom: 1px solid #e5e5e5; }
+    nav a { margin-right: 12px; color: #0b57d0; text-decoration: none; }
+    main { max-width: 920px; margin: 0 auto; padding: 24px 16px; }
+    article { padding: 18px; border: 1px solid #e5e5e5; border-radius: 12px; }
+    h1 { margin-top: 0; }
+    .ad { padding: 12px; border: 1px dashed #bbb; background: #fffbe6; margin: 12px 0; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    pre { background: #0b0b0b; color: #fafafa; padding: 12px; border-radius: 10px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>Demo Site</strong> — Header / navigation should be ignored by extraction
+  </header>
+
+  <nav aria-label="Primary">
+    <a href="#">Home</a>
+    <a href="#">Docs</a>
+    <a href="#">Pricing</a>
+    <a href="#">Contact</a>
+  </nav>
+
+  <aside class="ad" aria-label="Advertisement">
+    <strong>Advertisement:</strong> Buy something you don’t need.
+  </aside>
+
+  <main>
+    <article>
+      <h1>How Search Engines Understand a Page (Simple Explanation)</h1>
+      <p><em>Updated:</em> Jan 6, 2026 • <em>Reading time:</em> ~6 minutes</p>
+
+      <p>
+        This page is a <strong>test input</strong> for the Web Simplifier AI Chrome extension.
+        It contains real-looking article structure (headings, lists, code, callouts), plus extra noise
+        like navigation and ads. A good extractor should keep the article and drop the noise.
+      </p>
+
+      <h2>1) What a crawler does</h2>
+      <p>
+        A web crawler is software that requests pages and downloads the HTML. It doesn’t “see” the page
+        like a human at first; it reads markup and then may execute JavaScript. After fetching content,
+        the crawler stores a copy and passes it to systems that analyze text, links, and structure.
+      </p>
+
+      <div class="ad">
+        <strong>Inline ad block:</strong> This should be removed by Readability or fallback logic.
+      </div>
+
+      <h2>2) Why clean main-content extraction matters</h2>
+      <p>
+        Most real webpages include lots of non-article text: menus, cookie banners, related posts,
+        comment sections, and ads. If you send all of that to an AI model, you waste tokens and risk
+        low-quality summaries. That’s why this extension first tries <strong>Readability</strong> and then
+        falls back to a simpler main-content heuristic.
+      </p>
+
+      <h3>Key signals of a “main content” section</h3>
+      <ul>
+        <li>Long continuous text with paragraphs</li>
+        <li>Headings that match the page topic</li>
+        <li>Fewer repeated UI elements (nav links, buttons)</li>
+        <li>Located inside <code>&lt;article&gt;</code> or <code>&lt;main&gt;</code> tags</li>
+      </ul>
+
+      <h2>3) Example: a tiny snippet of structured data</h2>
+      <p>
+        Many sites include JSON-LD. Your extension may ignore it, but it’s a good example of content
+        that exists in the DOM yet shouldn’t be summarized verbatim.
+      </p>
+      <pre><code>{
+  "@context": "https://schema.org",
+  "@type": "Article",
+  "headline": "How Search Engines Understand a Page",
+  "author": "Example Author",
+  "datePublished": "2026-01-06"
+}</code></pre>
+
+      <h2>4) Practical checklist</h2>
+      <p>
+        If you’re testing, you should be able to get a summary that includes the main sections above.
+        It should mention crawlers, why extraction matters, and the checklist below.
+      </p>
+      <ol>
+        <li>Open this page in Chrome.</li>
+        <li>Run the extension in Overlay mode.</li>
+        <li>Confirm the summary focuses on the article (not header/nav/ads).</li>
+        <li>Run again to test caching (should avoid extra API calls if cache is enabled).</li>
+      </ol>
+
+      <h2>5) Extra filler text (to ensure the page is long enough)</h2>
+      <p>
+        Sometimes pages are short and the extension correctly refuses to summarize. To prevent that,
+        this paragraph adds extra length. The goal is to exceed common minimum thresholds for content
+        extraction so you can test reliably. Repeat after me: focus on the main idea, avoid noise,
+        and keep the output concise.
+      </p>
+      <p>
+        Another paragraph to increase size. This should be enough text for Readability to detect and
+        for the AI to produce a stable summary. If your output still seems off, try increasing the
+        content limit or adjusting the prompt.
+      </p>
+    </article>
+  </main>
+
+  <footer>
+    Footer content that should be ignored.
+  </footer>
+</body>
+</html>
