@@ -1,0 +1,11 @@
+/* InclusiveRead Content Styles */
+
+/* These styles are injected dynamically but defined here for reference */
+
+/* Base reset for extension elements */
+.ir-spotlight,
+.ir-jargon,
+.ir-jargon-wrapper,
+.ir-frozen {
+    all: initial;
+}
