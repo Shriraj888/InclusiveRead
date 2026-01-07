@@ -70,7 +70,19 @@ chrome.runtime.onInstalled.addListener((details) => {
         // Set default settings
         chrome.storage.sync.set({
             jargonEnabled: false,
-            sensoryEnabled: false
+            sensoryEnabled: false,
+            dyslexiaEnabled: false,
+            dyslexiaFont: 'opendyslexic',
+            letterSpacing: 1,
+            lineHeight: 1.6,
+            wordSpacing: 3,
+            overlayColor: 'none',
+            syllableHighlight: false,
+            bionicReading: false,
+            ttsEnabled: false,
+            ttsSpeed: 1,
+            ttsPauseOnPunctuation: true,
+            ttsWordHighlight: true
         });
 
         // Open welcome page or settings

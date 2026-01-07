@@ -4,10 +4,34 @@
 let state = {
     jargonEnabled: false,
     sensoryEnabled: false,
+    dyslexiaEnabled: false,
+    ttsEnabled: false,
     apiKey: null,
     jargonMap: [],
     animatedElements: [],
-    selectionDecoderActive: false
+    selectionDecoderActive: false,
+    dyslexiaSettings: {
+        font: 'opendyslexic',
+        letterSpacing: 1,
+        lineHeight: 1.6,
+        wordSpacing: 3,
+        overlayColor: 'none',
+        syllableHighlight: false,
+        bionicReading: false
+    },
+    ttsSettings: {
+        speed: 1,
+        pauseOnPunctuation: true,
+        wordHighlight: true
+    },
+    ttsState: {
+        isPlaying: false,
+        isPaused: false,
+        currentUtterance: null,
+        currentWordIndex: 0,
+        textContent: '',
+        words: []
+    }
 };
 
 // Initialize
@@ -18,10 +42,61 @@ async function init() {
     const settings = await chrome.storage.sync.get([
         'jargonEnabled',
         'sensoryEnabled',
+        'dyslexiaEnabled',
+        'dyslexiaFont',
+        'letterSpacing',
+        'lineHeight',
+        'wordSpacing',
+        'overlayColor',
+        'syllableHighlight',
+        'bionicReading',
+        'ttsEnabled',
+        'ttsSpeed',
+        'ttsPauseOnPunctuation',
+        'ttsWordHighlight',
         'apiKey'
     ]);
 
     Object.assign(state, settings);
+    
+    // Update dyslexia settings if present
+    if (settings.dyslexiaFont !== undefined) {
+        state.dyslexiaSettings = {
+            font: settings.dyslexiaFont || 'opendyslexic',
+            letterSpacing: settings.letterSpacing || 1,
+            lineHeight: settings.lineHeight || 1.6,
+            wordSpacing: settings.wordSpacing || 3,
+            overlayColor: settings.overlayColor || 'none',
+            syllableHighlight: settings.syllableHighlight || false,
+            bionicReading: settings.bionicReading || false
+        };
+    }
+    
+    // Update TTS settings if present
+    if (settings.ttsSpeed !== undefined) {
+        state.ttsSettings = {
+            speed: settings.ttsSpeed || 1,
+            pauseOnPunctuation: settings.ttsPauseOnPunctuation !== false,
+            wordHighlight: settings.ttsWordHighlight !== false
+        };
+    }
+
+    // Auto-enable features based on saved state
+    if (state.jargonEnabled) {
+        // Don't auto-run jargon decoder, just keep state
+    }
+
+    if (state.sensoryEnabled) {
+        activateSensoryShield();
+    }
+    
+    if (state.dyslexiaEnabled) {
+        activateDyslexiaMode(state.dyslexiaSettings);
+    }
+    
+    if (state.ttsEnabled) {
+        activateTTSMode(state.ttsSettings);
+    }
 
     // Apply enabled features
     if (state.jargonEnabled) {
@@ -1029,6 +1104,48 @@ async function handleMessage(request) {
                 deactivateSensoryShield();
             }
             break;
+
+        case 'toggleDyslexia':
+            state.dyslexiaEnabled = request.enabled;
+            if (request.enabled) {
+                activateDyslexiaMode(request.settings);
+            } else {
+                deactivateDyslexiaMode();
+            }
+            break;
+
+        case 'updateDyslexia':
+            if (state.dyslexiaEnabled) {
+                updateDyslexiaSettings(request.settings);
+            }
+            break;
+
+        case 'toggleTTS':
+            state.ttsEnabled = request.enabled;
+            if (request.enabled) {
+                activateTTSMode(request.settings);
+            } else {
+                deactivateTTSMode();
+            }
+            break;
+
+        case 'updateTTS':
+            if (state.ttsEnabled) {
+                updateTTSSettings(request.settings);
+            }
+            break;
+
+        case 'ttsPlay':
+            playTTS();
+            break;
+
+        case 'ttsPause':
+            pauseTTS();
+            break;
+
+        case 'ttsStop':
+            stopTTS();
+            break;
     }
 
     return { success: true };
@@ -1798,6 +1915,845 @@ function deactivateSensoryShield() {
     document.querySelectorAll('.ir-frozen').forEach(el => {
         el.classList.remove('ir-frozen');
     });
+}
+
+/**
+ * FEATURE 3: Dyslexia-Friendly Reading Mode
+ * Applies dyslexia-friendly fonts, spacing, and reading aids
+ */
+
+function activateDyslexiaMode(settings) {
+    state.dyslexiaSettings = settings;
+    applyDyslexiaStyles(settings);
+    showNotification('Dyslexia mode activated', 'success');
+}
+
+function deactivateDyslexiaMode() {
+    removeCSS('ir-dyslexia-styles');
+    removeCSS('ir-dyslexia-overlay');
+    removeCSS('ir-opendyslexic-font');
+    
+    // Remove bionic reading and syllable highlighting
+    document.querySelectorAll('.ir-bionic-word, .ir-syllable-word').forEach(el => {
+        el.replaceWith(el.textContent);
+    });
+    
+    showNotification('Dyslexia mode deactivated', 'info');
+}
+
+function updateDyslexiaSettings(settings) {
+    state.dyslexiaSettings = settings;
+    applyDyslexiaStyles(settings);
+}
+
+function applyDyslexiaStyles(settings) {
+    // Remove old styles
+    removeCSS('ir-dyslexia-styles');
+    removeCSS('ir-dyslexia-overlay');
+    removeCSS('ir-opendyslexic-font');
+    
+    // Inject OpenDyslexic font if selected
+    if (settings.font === 'opendyslexic') {
+        const fontCSS = `
+            @font-face {
+                font-family: 'OpenDyslexic';
+                src: url('https://cdn.jsdelivr.net/npm/opendyslexic@3.0.0/opendyslexic-regular.woff2') format('woff2');
+                font-weight: normal;
+                font-style: normal;
+                font-display: swap;
+            }
+            
+            @font-face {
+                font-family: 'OpenDyslexic';
+                src: url('https://cdn.jsdelivr.net/npm/opendyslexic@3.0.0/opendyslexic-bold.woff2') format('woff2');
+                font-weight: bold;
+                font-style: normal;
+                font-display: swap;
+            }
+        `;
+        injectCSS(fontCSS, 'ir-opendyslexic-font');
+    }
+    
+    // Determine font family
+    let fontFamily;
+    switch (settings.font) {
+        case 'opendyslexic':
+            fontFamily = "'OpenDyslexic', sans-serif";
+            break;
+        case 'comic':
+            fontFamily = "'Comic Sans MS', 'Comic Sans', cursive";
+            break;
+        case 'arial':
+        default:
+            fontFamily = "Arial, Helvetica, sans-serif";
+            break;
+    }
+    
+    // Build main styles
+    const styles = `
+        body, p, div, span, li, td, th, h1, h2, h3, h4, h5, h6, 
+        a, button, input, textarea, select, label {
+            font-family: ${fontFamily} !important;
+            letter-spacing: ${settings.letterSpacing}px !important;
+            line-height: ${settings.lineHeight} !important;
+            word-spacing: ${settings.wordSpacing}px !important;
+        }
+        
+        p, div, li {
+            max-width: 70ch !important;
+        }
+        
+        /* Prevent text from being too wide */
+        body {
+            overflow-wrap: break-word !important;
+            word-wrap: break-word !important;
+        }
+    `;
+    
+    injectCSS(styles, 'ir-dyslexia-styles');
+    
+    // Apply overlay color if selected
+    if (settings.overlayColor && settings.overlayColor !== 'none') {
+        const overlayColors = {
+            beige: 'rgba(245, 222, 179, 0.3)',
+            blue: 'rgba(173, 216, 230, 0.3)',
+            green: 'rgba(144, 238, 144, 0.3)',
+            yellow: 'rgba(255, 255, 224, 0.3)'
+        };
+        
+        const overlayStyle = `
+            body::before {
+                content: '';
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                background: ${overlayColors[settings.overlayColor]};
+                pointer-events: none;
+                z-index: 999999;
+            }
+        `;
+        
+        injectCSS(overlayStyle, 'ir-dyslexia-overlay');
+    }
+    
+    // Apply syllable highlighting
+    if (settings.syllableHighlight) {
+        applySyllableHighlighting();
+    } else {
+        removeSyllableHighlighting();
+    }
+    
+    // Apply bionic reading
+    if (settings.bionicReading) {
+        applyBionicReading();
+    } else {
+        removeBionicReading();
+    }
+}
+
+function applySyllableHighlighting() {
+    // Simple syllable detection (alternating colors)
+    const textNodes = getTextNodes(document.body);
+    
+    textNodes.forEach(node => {
+        // Skip if already processed or in special elements
+        if (node.parentElement?.classList.contains('ir-syllable-word') ||
+            node.parentElement?.closest('.ir-jargon, .ir-selection-toolbar, script, style, code, pre')) {
+            return;
+        }
+        
+        const text = node.textContent;
+        const words = text.split(/(\s+)/);
+        
+        if (words.length > 1) {
+            const span = document.createElement('span');
+            span.className = 'ir-syllable-word';
+            
+            words.forEach((word, index) => {
+                const wordSpan = document.createElement('span');
+                wordSpan.textContent = word;
+                
+                // Alternate colors for syllables (simplified - just alternating words)
+                if (!word.trim()) {
+                    wordSpan.textContent = word;
+                } else if (index % 2 === 0) {
+                    wordSpan.style.color = 'inherit';
+                } else {
+                    wordSpan.style.opacity = '0.7';
+                }
+                
+                span.appendChild(wordSpan);
+            });
+            
+            node.replaceWith(span);
+        }
+    });
+}
+
+function removeSyllableHighlighting() {
+    document.querySelectorAll('.ir-syllable-word').forEach(el => {
+        el.replaceWith(el.textContent);
+    });
+}
+
+function applyBionicReading() {
+    const textNodes = getTextNodes(document.body);
+    
+    textNodes.forEach(node => {
+        // Skip if already processed or in special elements
+        if (node.parentElement?.classList.contains('ir-bionic-word') ||
+            node.parentElement?.closest('.ir-jargon, .ir-selection-toolbar, script, style, code, pre')) {
+            return;
+        }
+        
+        const text = node.textContent;
+        const words = text.split(/(\s+)/);
+        
+        if (words.length > 1) {
+            const span = document.createElement('span');
+            span.className = 'ir-bionic-word';
+            
+            words.forEach(word => {
+                if (!word.trim()) {
+                    span.appendChild(document.createTextNode(word));
+                } else {
+                    const wordSpan = document.createElement('span');
+                    const halfLength = Math.ceil(word.length / 2);
+                    
+                    const boldPart = document.createElement('strong');
+                    boldPart.textContent = word.substring(0, halfLength);
+                    boldPart.style.fontWeight = '700';
+                    
+                    wordSpan.appendChild(boldPart);
+                    wordSpan.appendChild(document.createTextNode(word.substring(halfLength)));
+                    
+                    span.appendChild(wordSpan);
+                }
+            });
+            
+            node.replaceWith(span);
+        }
+    });
+}
+
+function removeBionicReading() {
+    document.querySelectorAll('.ir-bionic-word').forEach(el => {
+        el.replaceWith(el.textContent);
+    });
+}
+
+// Helper: Get all text nodes in an element
+function getTextNodes(element) {
+    const textNodes = [];
+    const walker = document.createTreeWalker(
+        element,
+        NodeFilter.SHOW_TEXT,
+        {
+            acceptNode: (node) => {
+                // Skip empty text and whitespace-only nodes
+                if (!node.textContent.trim()) {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                // Skip script, style, and other non-content elements
+                const parent = node.parentElement;
+                if (parent?.closest('script, style, noscript, iframe, object, embed')) {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                return NodeFilter.FILTER_ACCEPT;
+            }
+        }
+    );
+    
+    let node;
+    while (node = walker.nextNode()) {
+        // Only process text nodes in visible elements with substantial text
+        if (node.textContent.trim().length > 2) {
+            textNodes.push(node);
+        }
+    }
+    
+    return textNodes;
+}
+
+/**
+ * FEATURE 4: Text-to-Speech with Visual Tracking
+ * Read aloud with word-by-word highlighting and adjustable speed
+ */
+
+let ttsEngine = null;
+
+function activateTTSMode(settings) {
+    state.ttsSettings = settings;
+    initTTSEngine();
+    createTTSControls();
+    showNotification('Text-to-Speech activated', 'success');
+}
+
+function deactivateTTSMode() {
+    stopTTS();
+    removeTTSControls();
+    state.ttsEnabled = false;
+    showNotification('Text-to-Speech disabled', 'info');
+}
+
+function updateTTSSettings(settings) {
+    state.ttsSettings = settings;
+    if (state.ttsState.isPlaying && !state.ttsState.isPaused) {
+        // Restart with new settings
+        const wasPlaying = state.ttsState.isPlaying;
+        stopTTS();
+        if (wasPlaying) {
+            setTimeout(() => playTTS(), 100);
+        }
+    }
+}
+
+function createTTSControls() {
+    // Remove existing controls if any
+    removeTTSControls();
+    
+    const controlPanel = document.createElement('div');
+    controlPanel.id = 'ir-tts-controls';
+    controlPanel.className = 'ir-tts-controls';
+    controlPanel.innerHTML = `
+        <div class="ir-tts-control-header">
+            <span class="ir-tts-title">Text-to-Speech</span>
+            <button class="ir-tts-close" id="ir-tts-close">×</button>
+        </div>
+        <div class="ir-tts-buttons">
+            <button class="ir-tts-btn" id="ir-tts-play" title="Read Page">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+            </button>
+            <button class="ir-tts-btn" id="ir-tts-selection" title="Read Selection">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+                </svg>
+            </button>
+            <button class="ir-tts-btn" id="ir-tts-pause" title="Pause">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="6" y="4" width="4" height="16"/>
+                    <rect x="14" y="4" width="4" height="16"/>
+                </svg>
+            </button>
+            <button class="ir-tts-btn" id="ir-tts-stop" title="Stop">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                </svg>
+            </button>
+        </div>
+    `;
+    
+    document.body.appendChild(controlPanel);
+    
+    // Add event listeners
+    document.getElementById('ir-tts-play').addEventListener('click', playTTS);
+    document.getElementById('ir-tts-selection').addEventListener('click', playTTSSelection);
+    document.getElementById('ir-tts-pause').addEventListener('click', pauseTTS);
+    document.getElementById('ir-tts-stop').addEventListener('click', stopTTS);
+    document.getElementById('ir-tts-close').addEventListener('click', () => {
+        stopTTS();
+        removeTTSControls();
+    });
+    
+    injectTTSControlStyles();
+}
+
+function removeTTSControls() {
+    const controls = document.getElementById('ir-tts-controls');
+    if (controls) {
+        controls.remove();
+    }
+}
+
+function injectTTSControlStyles() {
+    const styles = `
+        .ir-tts-controls {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            padding: 16px;
+            z-index: 10000000;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(10px);
+            min-width: 220px;
+        }
+        
+        .ir-tts-control-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .ir-tts-title {
+            color: #fff;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        
+        .ir-tts-close {
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 24px;
+            line-height: 1;
+            cursor: pointer;
+            padding: 0;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: color 0.2s;
+        }
+        
+        .ir-tts-close:hover {
+            color: #fff;
+        }
+        
+        .ir-tts-buttons {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            justify-content: center;
+        }
+        
+        .ir-tts-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            padding: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 44px;
+        }
+        
+        .ir-tts-btn svg {
+            width: 20px;
+            height: 20px;
+            color: #fff;
+        }
+        
+        .ir-tts-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.4);
+            transform: translateY(-2px);
+        }
+        
+        .ir-tts-btn:active {
+            transform: translateY(0);
+        }
+        
+        .ir-tts-indicator {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: #fff;
+            padding: 24px 48px;
+            border-radius: 16px;
+            font-size: 32px;
+            font-weight: 600;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            z-index: 10000001;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            min-width: 300px;
+            text-align: center;
+            animation: ir-tts-word-pulse 0.3s ease-out;
+        }
+        
+        @keyframes ir-tts-word-pulse {
+            0% {
+                transform: translate(-50%, -50%) scale(0.9);
+                opacity: 0;
+            }
+            100% {
+                transform: translate(-50%, -50%) scale(1);
+                opacity: 1;
+            }
+        }
+    `;
+    
+    injectCSS(styles, 'ir-tts-control-styles');
+}
+
+function initTTSEngine() {
+    if (!window.speechSynthesis) {
+        showNotification('Text-to-Speech not supported in this browser', 'error');
+        return;
+    }
+    ttsEngine = window.speechSynthesis;
+    
+    // Load voices (some browsers need this)
+    if (ttsEngine.getVoices().length === 0) {
+        ttsEngine.addEventListener('voiceschanged', () => {
+            console.log('TTS voices loaded:', ttsEngine.getVoices().length);
+        }, { once: true });
+    }
+}
+
+function playTTS() {
+    if (!state.ttsEnabled || !ttsEngine) {
+        showNotification('Please enable Text-to-Speech first', 'error');
+        return;
+    }
+
+    // If paused, resume
+    if (state.ttsState.isPaused) {
+        ttsEngine.resume();
+        state.ttsState.isPaused = false;
+        showNotification('Resuming...', 'info');
+        return;
+    }
+
+    // If already playing, do nothing
+    if (state.ttsState.isPlaying) {
+        return;
+    }
+
+    // Cancel any existing speech
+    ttsEngine.cancel();
+
+    // Extract main content text
+    const content = extractReadableContent();
+    
+    if (!content || content.length < 10) {
+        showNotification('No readable content found on this page', 'error');
+        return;
+    }
+
+    // Limit text length to avoid errors (max ~32KB)
+    const maxLength = 32000;
+    let textToRead = content.substring(0, maxLength);
+    
+    if (state.ttsSettings.pauseOnPunctuation) {
+        // Add slight pauses after punctuation
+        textToRead = textToRead
+            .replace(/\./g, '. ')
+            .replace(/,/g, ', ')
+            .replace(/;/g, '; ')
+            .replace(/:/g, ': ')
+            .replace(/\?/g, '? ')
+            .replace(/!/g, '! ');
+    }
+
+    state.ttsState.textContent = textToRead;
+    state.ttsState.words = textToRead.split(/\s+/).filter(w => w.trim().length > 0);
+    state.ttsState.currentWordIndex = 0;
+
+    const utterance = new SpeechSynthesisUtterance(textToRead);
+    
+    // Ensure valid rate (0.1 to 10)
+    utterance.rate = Math.max(0.1, Math.min(10, state.ttsSettings.speed || 1));
+    utterance.pitch = 1;
+    utterance.volume = 1;
+    
+    // Set language
+    utterance.lang = 'en-US';
+    
+    // Get available voices and set a voice
+    const voices = ttsEngine.getVoices();
+    if (voices.length > 0) {
+        // Try to find an English voice
+        const englishVoice = voices.find(voice => voice.lang.startsWith('en')) || voices[0];
+        utterance.voice = englishVoice;
+    }
+
+    // Word boundary event for highlighting
+    if (state.ttsSettings.wordHighlight) {
+        utterance.onboundary = (event) => {
+            if (event.name === 'word') {
+                highlightCurrentWord(event.charIndex);
+            }
+        };
+    }
+
+    utterance.onstart = () => {
+        state.ttsState.isPlaying = true;
+        state.ttsState.isPaused = false;
+        showNotification('Reading started...', 'info');
+    };
+
+    utterance.onend = () => {
+        state.ttsState.isPlaying = false;
+        state.ttsState.isPaused = false;
+        state.ttsState.currentUtterance = null;
+        clearTTSHighlight();
+        showNotification('Reading complete', 'success');
+    };
+
+    utterance.onerror = (event) => {
+        console.error('TTS Error:', event.error, event);
+        state.ttsState.isPlaying = false;
+        state.ttsState.isPaused = false;
+        state.ttsState.currentUtterance = null;
+        clearTTSHighlight();
+        
+        // Show user-friendly error message
+        let errorMsg = 'Speech synthesis error';
+        if (event.error === 'canceled') {
+            errorMsg = 'Speech was stopped';
+        } else if (event.error === 'interrupted') {
+            errorMsg = 'Speech was interrupted';
+        } else if (event.error === 'audio-busy') {
+            errorMsg = 'Audio is busy, try again';
+        } else if (event.error === 'not-allowed') {
+            errorMsg = 'Speech not allowed - check browser permissions';
+        }
+        showNotification(errorMsg, 'error');
+    };
+
+    // Store utterance reference
+    state.ttsState.currentUtterance = utterance;
+    
+    // Speak with a small delay to ensure everything is ready
+    setTimeout(() => {
+        if (state.ttsState.currentUtterance === utterance) {
+            ttsEngine.speak(utterance);
+        }
+    }, 100);
+}
+
+function playTTSSelection() {
+    if (!state.ttsEnabled || !ttsEngine) {
+        showNotification('Please enable Text-to-Speech first', 'error');
+        return;
+    }
+
+    // Get selected text
+    const selection = window.getSelection();
+    const selectedText = selection.toString().trim();
+
+    if (!selectedText || selectedText.length < 3) {
+        showNotification('Please select some text first', 'error');
+        return;
+    }
+
+    // If already playing, stop first
+    if (state.ttsState.isPlaying) {
+        stopTTS();
+    }
+
+    // Cancel any existing speech
+    ttsEngine.cancel();
+
+    // Prepare text
+    let textToRead = selectedText;
+    
+    if (state.ttsSettings.pauseOnPunctuation) {
+        textToRead = textToRead
+            .replace(/\./g, '. ')
+            .replace(/,/g, ', ')
+            .replace(/;/g, '; ')
+            .replace(/:/g, ': ')
+            .replace(/\?/g, '? ')
+            .replace(/!/g, '! ');
+    }
+
+    state.ttsState.textContent = textToRead;
+    state.ttsState.words = textToRead.split(/\s+/).filter(w => w.trim().length > 0);
+    state.ttsState.currentWordIndex = 0;
+
+    const utterance = new SpeechSynthesisUtterance(textToRead);
+    
+    // Ensure valid rate (0.1 to 10)
+    utterance.rate = Math.max(0.1, Math.min(10, state.ttsSettings.speed || 1));
+    utterance.pitch = 1;
+    utterance.volume = 1;
+    utterance.lang = 'en-US';
+    
+    // Get available voices and set a voice
+    const voices = ttsEngine.getVoices();
+    if (voices.length > 0) {
+        const englishVoice = voices.find(voice => voice.lang.startsWith('en')) || voices[0];
+        utterance.voice = englishVoice;
+    }
+
+    // Word boundary event for highlighting
+    if (state.ttsSettings.wordHighlight) {
+        utterance.onboundary = (event) => {
+            if (event.name === 'word') {
+                highlightCurrentWord(event.charIndex);
+            }
+        };
+    }
+
+    utterance.onstart = () => {
+        state.ttsState.isPlaying = true;
+        state.ttsState.isPaused = false;
+        showNotification('Reading selection...', 'info');
+    };
+
+    utterance.onend = () => {
+        state.ttsState.isPlaying = false;
+        state.ttsState.isPaused = false;
+        state.ttsState.currentUtterance = null;
+        clearTTSHighlight();
+        showNotification('Reading complete', 'success');
+    };
+
+    utterance.onerror = (event) => {
+        console.error('TTS Error:', event.error, event);
+        state.ttsState.isPlaying = false;
+        state.ttsState.isPaused = false;
+        state.ttsState.currentUtterance = null;
+        clearTTSHighlight();
+        
+        let errorMsg = 'Speech synthesis error';
+        if (event.error === 'canceled') {
+            errorMsg = 'Speech was stopped';
+        } else if (event.error === 'interrupted') {
+            errorMsg = 'Speech was interrupted';
+        } else if (event.error === 'audio-busy') {
+            errorMsg = 'Audio is busy, try again';
+        } else if (event.error === 'not-allowed') {
+            errorMsg = 'Speech not allowed - check browser permissions';
+        }
+        showNotification(errorMsg, 'error');
+    };
+
+    // Store utterance reference
+    state.ttsState.currentUtterance = utterance;
+    
+    // Speak with a small delay
+    setTimeout(() => {
+        if (state.ttsState.currentUtterance === utterance) {
+            ttsEngine.speak(utterance);
+        }
+    }, 100);
+}
+
+function pauseTTS() {
+    if (!state.ttsState.isPlaying || state.ttsState.isPaused) {
+        return;
+    }
+
+    if (ttsEngine) {
+        ttsEngine.pause();
+        state.ttsState.isPaused = true;
+        showNotification('Paused', 'info');
+    }
+}
+
+function stopTTS() {
+    if (ttsEngine) {
+        try {
+            ttsEngine.cancel();
+        } catch (error) {
+            console.error('Error canceling TTS:', error);
+        }
+    }
+    
+    state.ttsState.isPlaying = false;
+    state.ttsState.isPaused = false;
+    state.ttsState.currentUtterance = null;
+    state.ttsState.currentWordIndex = 0;
+    state.ttsState.words = [];
+    state.ttsState.textContent = '';
+    
+    clearTTSHighlight();
+    showNotification('Speech stopped', 'info');
+}
+
+function extractReadableContent() {
+    // Try to find main content area
+    const selectors = [
+        'article',
+        'main',
+        '[role="main"]',
+        '.main-content',
+        '#content',
+        '.content',
+        '.post-content',
+        '.article-content'
+    ];
+
+    let contentElement = null;
+    for (const selector of selectors) {
+        contentElement = document.querySelector(selector);
+        if (contentElement) break;
+    }
+
+    // Fall back to body if no main content found
+    if (!contentElement) {
+        contentElement = document.body;
+    }
+
+    // Extract text from paragraphs and headings
+    const textElements = contentElement.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li');
+    let text = '';
+    
+    textElements.forEach(el => {
+        // Skip hidden elements
+        if (el.offsetParent === null) return;
+        
+        const elementText = el.textContent.trim();
+        if (elementText.length > 0) {
+            text += elementText + ' ';
+        }
+    });
+
+    return text.trim();
+}
+
+function highlightCurrentWord(charIndex) {
+    // Find the word at this character index
+    let currentIndex = 0;
+    let wordIndex = 0;
+    const words = state.ttsState.words;
+
+    for (let i = 0; i < words.length; i++) {
+        if (charIndex >= currentIndex && charIndex < currentIndex + words[i].length) {
+            wordIndex = i;
+            break;
+        }
+        currentIndex += words[i].length + 1; // +1 for space
+    }
+
+    state.ttsState.currentWordIndex = wordIndex;
+
+    // Visual highlighting (simplified - highlights entire viewport)
+    clearTTSHighlight();
+    
+    // Create a floating highlight indicator
+    let indicator = document.getElementById('ir-tts-indicator');
+    if (!indicator) {
+        indicator = document.createElement('div');
+        indicator.id = 'ir-tts-indicator';
+        indicator.className = 'ir-tts-indicator';
+        document.body.appendChild(indicator);
+    }
+
+    const currentWord = words[wordIndex];
+    indicator.textContent = currentWord;
+    indicator.style.display = 'flex';
+}
+
+function clearTTSHighlight() {
+    const indicator = document.getElementById('ir-tts-indicator');
+    if (indicator) {
+        indicator.style.display = 'none';
+    }
 }
 
 /**
