@@ -1,12 +1,8 @@
 // Popup.js - Extension popup logic
 
 // DOM elements
-const spotlightToggle = document.getElementById('spotlightToggle');
 const jargonToggle = document.getElementById('jargonToggle');
 const sensoryToggle = document.getElementById('sensoryToggle');
-const spotlightIntensity = document.getElementById('spotlightIntensity');
-const spotlightValue = document.getElementById('spotlightValue');
-const spotlightSettings = document.getElementById('spotlightSettings');
 const settingsBtn = document.getElementById('settingsBtn');
 const settingsPanel = document.getElementById('settingsPanel');
 const apiKeyInput = document.getElementById('apiKey');
@@ -17,36 +13,17 @@ const statusText = document.getElementById('statusText');
 
 // Load saved settings
 chrome.storage.sync.get([
-  'spotlightEnabled',
   'jargonEnabled',
   'sensoryEnabled',
-  'spotlightIntensity',
   'apiKey'
 ], (result) => {
-  spotlightToggle.checked = result.spotlightEnabled || false;
   jargonToggle.checked = result.jargonEnabled || false;
   sensoryToggle.checked = result.sensoryEnabled || false;
-  spotlightIntensity.value = result.spotlightIntensity || 70;
-  spotlightValue.textContent = `${spotlightIntensity.value}%`;
 
   if (result.apiKey) {
     apiKeyInput.value = result.apiKey;
     showApiStatus('API key configured', 'success');
   }
-
-  // Show spotlight settings if enabled
-  if (result.spotlightEnabled) {
-    spotlightSettings.style.display = 'block';
-  }
-});
-
-// Spotlight toggle
-spotlightToggle.addEventListener('change', async (e) => {
-  const enabled = e.target.checked;
-  await chrome.storage.sync.set({ spotlightEnabled: enabled });
-  spotlightSettings.style.display = enabled ? 'block' : 'none';
-  await sendMessageToActiveTab({ action: 'toggleSpotlight', enabled });
-  updateMainStatus();
 });
 
 // Jargon toggle
@@ -65,20 +42,6 @@ sensoryToggle.addEventListener('change', async (e) => {
   updateMainStatus();
 });
 
-// Spotlight intensity slider
-spotlightIntensity.addEventListener('input', (e) => {
-  const value = e.target.value;
-  spotlightValue.textContent = `${value}%`;
-  // Update gradient
-  e.target.style.background = `linear-gradient(to right, #667eea 0%, #667eea ${value}%, #e2e8f0 ${value}%, #e2e8f0 100%)`;
-});
-
-spotlightIntensity.addEventListener('change', async (e) => {
-  const value = parseInt(e.target.value);
-  await chrome.storage.sync.set({ spotlightIntensity: value });
-  await sendMessageToActiveTab({ action: 'updateSpotlightIntensity', value });
-});
-
 // Settings panel toggle
 settingsBtn.addEventListener('click', () => {
   const isOpen = settingsPanel.style.display === 'block';
@@ -90,7 +53,12 @@ settingsBtn.addEventListener('click', () => {
 toggleKeyBtn.addEventListener('click', () => {
   const isPassword = apiKeyInput.type === 'password';
   apiKeyInput.type = isPassword ? 'text' : 'password';
-  toggleKeyBtn.textContent = isPassword ? '🙈' : '👁️';
+  const eyeIcon = toggleKeyBtn.querySelector('svg');
+  if (isPassword) {
+    eyeIcon.innerHTML = '<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/>';
+  } else {
+    eyeIcon.innerHTML = '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>';
+  }
 });
 
 // Save API key
@@ -121,7 +89,7 @@ saveKeyBtn.addEventListener('click', async () => {
     });
 
     if (response.success) {
-      showApiStatus('API key validated ✓', 'success');
+      showApiStatus('API key validated successfully', 'success');
     } else {
       showApiStatus(`API key error: ${response.error}`, 'error');
     }
@@ -171,11 +139,10 @@ function showApiStatus(message, type) {
 
 // Helper: Update main status
 function updateMainStatus() {
-  const anyEnabled = spotlightToggle.checked || jargonToggle.checked || sensoryToggle.checked;
+  const anyEnabled = jargonToggle.checked || sensoryToggle.checked;
 
   if (anyEnabled) {
     const features = [];
-    if (spotlightToggle.checked) features.push('Spotlight');
     if (jargonToggle.checked) features.push('Jargon');
     if (sensoryToggle.checked) features.push('Sensory');
     statusText.textContent = `Active: ${features.join(', ')}`;
@@ -183,7 +150,3 @@ function updateMainStatus() {
     statusText.textContent = 'Ready to simplify';
   }
 }
-
-// Initialize intensity slider gradient
-const initialValue = spotlightIntensity.value;
-spotlightIntensity.style.background = `linear-gradient(to right, #667eea 0%, #667eea ${initialValue}%, #e2e8f0 ${initialValue}%, #e2e8f0 100%)`;

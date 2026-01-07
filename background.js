@@ -15,11 +15,11 @@ async function handleMessage(request, sender) {
         case 'testApiKey':
             return await testApiKeyHandler(request.apiKey);
 
-        case 'analyzePageIntent':
-            return await analyzePageIntentHandler(request.domStructure, request.apiKey);
-
         case 'detectJargon':
             return await detectJargonHandler(request.pageText, request.apiKey);
+
+        case 'simplifyText':
+            return await simplifyTextHandler(request.text, request.apiKey);
 
         default:
             return { success: false, error: 'Unknown action' };
@@ -39,11 +39,11 @@ async function testApiKeyHandler(apiKey) {
 }
 
 /**
- * Analyze page intent
+ * Detect jargon
  */
-async function analyzePageIntentHandler(domStructure, apiKey) {
+async function detectJargonHandler(pageText, apiKey) {
     try {
-        const result = await analyzePageIntent(domStructure, apiKey);
+        const result = await detectJargon(pageText, apiKey);
         return { success: true, data: result };
     } catch (error) {
         return { success: false, error: error.message };
@@ -51,11 +51,11 @@ async function analyzePageIntentHandler(domStructure, apiKey) {
 }
 
 /**
- * Detect jargon
+ * Simplify text into plain English
  */
-async function detectJargonHandler(pageText, apiKey) {
+async function simplifyTextHandler(text, apiKey) {
     try {
-        const result = await detectJargon(pageText, apiKey);
+        const result = await simplifyText(text, apiKey);
         return { success: true, data: result };
     } catch (error) {
         return { success: false, error: error.message };
@@ -69,10 +69,8 @@ chrome.runtime.onInstalled.addListener((details) => {
 
         // Set default settings
         chrome.storage.sync.set({
-            spotlightEnabled: false,
             jargonEnabled: false,
-            sensoryEnabled: false,
-            spotlightIntensity: 70
+            sensoryEnabled: false
         });
 
         // Open welcome page or settings

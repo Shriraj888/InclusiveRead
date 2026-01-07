@@ -37,77 +37,157 @@ async function callOpenRouter(messages, apiKey) {
 }
 
 /**
- * Analyze page intent and identify primary action
+ * Detect and simplify jargon - Enhanced version
  */
-async function analyzePageIntent(domStructure, apiKey) {
-    const prompt = `You are an accessibility AI analyzing a webpage to help neurodivergent users.
+async function detectJargon(pageText, apiKey, options = {}) {
+    const { category = 'all', contextHints = [] } = options;
+    
+    // Pre-process text to extract meaningful content
+    const cleanText = pageText
+        .replace(/\s+/g, ' ')
+        .replace(/[^\w\s.,;:'"()-]/g, '')
+        .trim();
+    
+    const prompt = `You are an expert accessibility assistant helping neurodivergent users understand complex terminology.
 
-Given this page structure:
-${JSON.stringify(domStructure.slice(0, 50), null, 2)}
+CONTEXT: Analyze this webpage content and identify terms that may be difficult to understand.
 
-Tasks:
-1. Identify the PRIMARY user action on this page (e.g., "Register", "Pay Bill", "Submit Form", "Login")
-2. Return the XPath of the most important interactive element for that action
-3. List any secondary important actions
+PAGE CONTENT:
+"""
+${cleanText.slice(0, 4000)}
+"""
 
-Respond ONLY with valid JSON in this exact format:
-{
-  "primaryAction": "description of main action",
-  "primaryElement": "xpath of element",
-  "secondaryActions": ["action1", "action2"],
-  "pageType": "form|information|navigation|transaction"
-}`;
+YOUR TASK:
+1. Identify complex terms in these categories:
+   - LEGAL: contracts, agreements, liability, terms of service
+   - FINANCIAL: fees, payments, billing, transactions
+   - TECHNICAL: software, digital, computing terms
+   - MEDICAL: health, conditions, treatments
+   - GOVERNMENT: regulations, policies, bureaucratic language
+   - ACADEMIC: formal, scholarly language
 
-    try {
-        const text = await callOpenRouter([{ role: 'user', content: prompt }], apiKey);
+2. For each term provide:
+   - The exact term as it appears (preserve case)
+   - A simple 2-4 word alternative
+   - A brief explanation (max 15 words)
+   - Category (legal/financial/technical/medical/government/academic)
+   - Difficulty level (1-3, where 3 is most complex)
 
-        // Extract JSON from response (handle markdown code blocks)
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        const result = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
+3. PRIORITIZE:
+   - Terms related to user actions or decisions
+   - Terms that could cause confusion or anxiety
+   - Terms with legal or financial implications
+   - Acronyms and abbreviations
 
-        return result;
-    } catch (error) {
-        console.error('Analysis failed:', error);
-        return null;
-    }
-}
-
-/**
- * Detect and simplify jargon
- */
-async function detectJargon(pageText, apiKey) {
-    const prompt = `You are simplifying legal/government jargon for neurodivergent users with cognitive processing differences.
-
-Page text sample:
-${pageText.slice(0, 2000)}
-
-Tasks:
-1. Identify complex legal/bureaucratic terms that would confuse users
-2. Provide simple, plain-English alternatives
-3. Focus on actionable language
-
-Respond ONLY with valid JSON array:
+RESPOND with valid JSON array only (no markdown):
 [
   {
-    "jargon": "original complex term",
+    "jargon": "exact term",
     "simple": "easy alternative",
-    "explanation": "brief context"
+    "explanation": "brief context in plain English",
+    "category": "legal|financial|technical|medical|government|academic",
+    "difficulty": 1-3
   }
 ]
 
-Limit to top 10 most important terms.`;
+Return up to 15 terms, sorted by importance. If no complex terms found, return empty array [].`;
 
     try {
         const text = await callOpenRouter([{ role: 'user', content: prompt }], apiKey);
 
         // Extract JSON from response
-        const jsonMatch = text.match(/\[[\s\S]*\]/);
-        const result = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+        const jsonMatch = text.match(/\[[\s\S]*?\]/);
+        if (!jsonMatch) {
+            console.warn('No valid JSON array in jargon response');
+            return [];
+        }
+        
+        let result = JSON.parse(jsonMatch[0]);
+        
+        // Validate and clean results
+        result = result.filter(item => 
+            item.jargon && 
+            item.simple && 
+            item.jargon.length >= 3 &&
+            item.jargon.length <= 50
+        ).map(item => ({
+            jargon: item.jargon.trim(),
+            simple: item.simple.trim(),
+            explanation: (item.explanation || '').trim(),
+            category: item.category || 'general',
+            difficulty: Math.min(3, Math.max(1, item.difficulty || 2))
+        }));
+
+        // Sort by difficulty (most complex first)
+        result.sort((a, b) => b.difficulty - a.difficulty);
 
         return result;
     } catch (error) {
         console.error('Jargon detection failed:', error);
         return [];
+    }
+}
+
+/**
+ * Simplify text into plain, easy-to-understand English
+ */
+async function simplifyText(text, apiKey) {
+    const cleanText = text
+        .replace(/\s+/g, ' ')
+        .trim();
+    
+    const prompt = `You are a plain language expert helping neurodivergent users understand complex text.
+
+ORIGINAL TEXT:
+"""
+${cleanText.slice(0, 3000)}
+"""
+
+YOUR TASK:
+Rewrite this text in SIMPLE, PLAIN ENGLISH that is easy to understand.
+
+RULES:
+1. Use short sentences (max 15 words each)
+2. Use common, everyday words
+3. Avoid jargon, technical terms, and formal language
+4. Break down complex ideas into simple steps
+5. Use active voice ("We will send" not "It will be sent")
+6. Explain any necessary technical terms in parentheses
+7. Keep the same meaning and all important information
+8. Use bullet points for lists when helpful
+9. Write at a 6th-grade reading level
+
+RESPOND with valid JSON only (no markdown):
+{
+  "simplified": "the rewritten text in plain English",
+  "readingLevel": "estimated grade level (e.g., '6th grade')",
+  "keyChanges": ["brief list of main simplifications made"]
+}`;
+
+    try {
+        const response = await callOpenRouter([{ role: 'user', content: prompt }], apiKey);
+        
+        // Extract JSON from response
+        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+            console.warn('No valid JSON in simplify response');
+            return null;
+        }
+        
+        const result = JSON.parse(jsonMatch[0]);
+        
+        if (!result.simplified) {
+            return null;
+        }
+        
+        return {
+            simplified: result.simplified.trim(),
+            readingLevel: result.readingLevel || 'Unknown',
+            keyChanges: result.keyChanges || []
+        };
+    } catch (error) {
+        console.error('Text simplification failed:', error);
+        return null;
     }
 }
 
@@ -126,8 +206,8 @@ async function testApiKey(apiKey) {
 // Export for background script
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
-        analyzePageIntent,
         detectJargon,
+        simplifyText,
         testApiKey
     };
 }
