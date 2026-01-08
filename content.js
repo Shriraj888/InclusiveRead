@@ -58,7 +58,7 @@ async function init() {
     ]);
 
     Object.assign(state, settings);
-    
+
     // Update dyslexia settings if present
     if (settings.dyslexiaFont !== undefined) {
         state.dyslexiaSettings = {
@@ -71,7 +71,7 @@ async function init() {
             bionicReading: settings.bionicReading || false
         };
     }
-    
+
     // Update TTS settings if present
     if (settings.ttsSpeed !== undefined) {
         state.ttsSettings = {
@@ -89,11 +89,11 @@ async function init() {
     if (state.sensoryEnabled) {
         activateSensoryShield();
     }
-    
+
     if (state.dyslexiaEnabled) {
         activateDyslexiaMode(state.dyslexiaSettings);
     }
-    
+
     if (state.ttsEnabled) {
         activateTTSMode(state.ttsSettings);
     }
@@ -106,7 +106,7 @@ async function init() {
     if (state.sensoryEnabled) {
         activateSensoryShield();
     }
-    
+
     // Initialize selection decoder (always available)
     initSelectionDecoder();
 }
@@ -123,6 +123,83 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 /**
+ * Handle messages from popup
+ */
+async function handleMessage(request) {
+    const { action } = request;
+
+    switch (action) {
+        // Jargon Decoder
+        case 'toggleJargon':
+            state.jargonEnabled = request.enabled;
+            if (request.enabled) {
+                await activateJargonDecoder();
+            } else {
+                deactivateJargonDecoder();
+            }
+            return { success: true };
+
+        // Sensory Shield
+        case 'toggleSensory':
+            state.sensoryEnabled = request.enabled;
+            if (request.enabled) {
+                activateSensoryShield();
+            } else {
+                deactivateSensoryShield();
+            }
+            return { success: true };
+
+        // Dyslexia Reading Mode
+        case 'toggleDyslexia':
+            state.dyslexiaEnabled = request.enabled;
+            if (request.enabled) {
+                activateDyslexiaMode(request.settings);
+            } else {
+                deactivateDyslexiaMode();
+            }
+            return { success: true };
+
+        case 'updateDyslexia':
+            if (state.dyslexiaEnabled) {
+                updateDyslexiaSettings(request.settings);
+            }
+            return { success: true };
+
+        // Text-to-Speech
+        case 'toggleTTS':
+            state.ttsEnabled = request.enabled;
+            if (request.enabled) {
+                activateTTSMode(request.settings);
+            } else {
+                deactivateTTSMode();
+            }
+            return { success: true };
+
+        case 'updateTTS':
+            if (state.ttsEnabled) {
+                updateTTSSettings(request.settings);
+            }
+            return { success: true };
+
+        case 'ttsPlay':
+            playTTS();
+            return { success: true };
+
+        case 'ttsPause':
+            pauseTTS();
+            return { success: true };
+
+        case 'ttsStop':
+            stopTTS();
+            return { success: true };
+
+        default:
+            console.warn('Unknown action:', action);
+            return { success: false, error: 'Unknown action' };
+    }
+}
+
+/**
  * Selection-based Jargon Decoder
  * Shows a floating button when text is selected to decode only that portion
  */
@@ -131,7 +208,7 @@ function initSelectionDecoder() {
     const selectionToolbar = document.createElement('div');
     selectionToolbar.className = 'ir-selection-toolbar';
     selectionToolbar.style.display = 'none';
-    
+
     // Decode button
     const decodeButton = document.createElement('div');
     decodeButton.className = 'ir-selection-decode-btn ir-toolbar-btn';
@@ -143,7 +220,7 @@ function initSelectionDecoder() {
         </svg>
         <span>Decode</span>
     `;
-    
+
     // Simplify button
     const simplifyButton = document.createElement('div');
     simplifyButton.className = 'ir-selection-simplify-btn ir-toolbar-btn';
@@ -157,44 +234,44 @@ function initSelectionDecoder() {
         </svg>
         <span>Simplify</span>
     `;
-    
+
     selectionToolbar.appendChild(decodeButton);
     selectionToolbar.appendChild(simplifyButton);
     document.body.appendChild(selectionToolbar);
-    
+
     // Inject styles for selection decoder
     injectSelectionDecoderStyles();
-    
+
     let currentSelection = null;
     let selectionRange = null;
-    
+
     // Handle text selection
     document.addEventListener('mouseup', (e) => {
         // Don't show if clicking on the toolbar itself
         if (e.target.closest('.ir-selection-toolbar')) return;
-        
+
         setTimeout(() => {
             const selection = window.getSelection();
             const selectedText = selection.toString().trim();
-            
+
             if (selectedText.length >= 10 && selectedText.length <= 5000) {
                 currentSelection = selectedText;
                 selectionRange = selection.getRangeAt(0).cloneRange();
-                
+
                 // Position toolbar near selection
                 const rect = selection.getRangeAt(0).getBoundingClientRect();
                 const toolbarWidth = 220;
                 const toolbarHeight = 44;
-                
+
                 let left = rect.left + (rect.width / 2) - (toolbarWidth / 2);
                 let top = rect.top - toolbarHeight - 12 + window.scrollY;
-                
+
                 // Keep within viewport
                 left = Math.max(10, Math.min(left, window.innerWidth - toolbarWidth - 10));
                 if (top < window.scrollY + 10) {
                     top = rect.bottom + 12 + window.scrollY;
                 }
-                
+
                 selectionToolbar.style.left = `${left}px`;
                 selectionToolbar.style.top = `${top}px`;
                 selectionToolbar.style.display = 'flex';
@@ -204,14 +281,14 @@ function initSelectionDecoder() {
             }
         }, 10);
     });
-    
+
     // Hide toolbar when clicking elsewhere
     document.addEventListener('mousedown', (e) => {
         if (!e.target.closest('.ir-selection-toolbar')) {
             hideToolbar();
         }
     });
-    
+
     // Handle scroll - reposition or hide toolbar
     document.addEventListener('scroll', () => {
         if (selectionToolbar.classList.contains('ir-visible') && selectionRange) {
@@ -221,7 +298,7 @@ function initSelectionDecoder() {
             }
         }
     }, { passive: true });
-    
+
     // Decode button click handler
     decodeButton.addEventListener('click', async () => {
         if (currentSelection && selectionRange) {
@@ -229,7 +306,7 @@ function initSelectionDecoder() {
             await decodeSelectedText(currentSelection, selectionRange);
         }
     });
-    
+
     // Simplify button click handler
     simplifyButton.addEventListener('click', async () => {
         if (currentSelection && selectionRange) {
@@ -237,7 +314,7 @@ function initSelectionDecoder() {
             await simplifySelectedText(currentSelection, selectionRange);
         }
     });
-    
+
     function hideToolbar() {
         selectionToolbar.classList.remove('ir-visible');
         setTimeout(() => {
@@ -255,7 +332,7 @@ async function decodeSelectedText(selectedText, range) {
     // Show mini loader
     showProgressLoader('Decoding selection...', 'jargon');
     updateProgress(10);
-    
+
     // Get API key
     const { apiKey } = await chrome.storage.sync.get('apiKey');
     if (!apiKey) {
@@ -264,38 +341,38 @@ async function decodeSelectedText(selectedText, range) {
         return;
     }
     updateProgress(20);
-    
+
     try {
         updateProgressText('Analyzing selected text...');
         updateProgress(40);
-        
+
         // Send to AI for analysis
         const response = await chrome.runtime.sendMessage({
             action: 'detectJargon',
             pageText: selectedText,
             apiKey
         });
-        
+
         updateProgress(70);
-        
+
         if (!response.success || !response.data || response.data.length === 0) {
             hideProgressLoader();
             showNotification('No complex terms found in selection', 'info');
             return;
         }
-        
+
         updateProgressText('Applying simplifications...');
         updateProgress(85);
-        
+
         // Apply replacements only within the selection range
         applyJargonToSelection(response.data, range);
-        
+
         updateProgress(100);
         hideProgressLoader();
-        
+
         // Show result popup
         showSelectionDecodedPopup(response.data, range);
-        
+
     } catch (error) {
         console.error('Selection decode error:', error);
         hideProgressLoader();
@@ -310,7 +387,7 @@ async function simplifySelectedText(selectedText, range) {
     // Show loader
     showProgressLoader('Simplifying text...', 'jargon');
     updateProgress(10);
-    
+
     // Get API key
     const { apiKey } = await chrome.storage.sync.get('apiKey');
     if (!apiKey) {
@@ -319,33 +396,33 @@ async function simplifySelectedText(selectedText, range) {
         return;
     }
     updateProgress(20);
-    
+
     try {
         updateProgressText('Rewriting in plain English...');
         updateProgress(40);
-        
+
         // Send to AI for simplification
         const response = await chrome.runtime.sendMessage({
             action: 'simplifyText',
             text: selectedText,
             apiKey
         });
-        
+
         updateProgress(80);
-        
+
         if (!response.success || !response.data || !response.data.simplified) {
             hideProgressLoader();
             showNotification('Could not simplify this text', 'info');
             return;
         }
-        
+
         updateProgressText('Done!');
         updateProgress(100);
         hideProgressLoader();
-        
+
         // Show simplified text popup
         showSimplifiedTextPopup(selectedText, response.data, range);
-        
+
     } catch (error) {
         console.error('Text simplification error:', error);
         hideProgressLoader();
@@ -359,9 +436,9 @@ async function simplifySelectedText(selectedText, range) {
 function showSimplifiedTextPopup(originalText, data, range) {
     // Remove existing popup
     document.querySelector('.ir-simplify-popup')?.remove();
-    
+
     const rect = range.getBoundingClientRect();
-    
+
     const popup = document.createElement('div');
     popup.className = 'ir-simplify-popup';
     popup.innerHTML = `
@@ -414,29 +491,29 @@ function showSimplifiedTextPopup(originalText, data, range) {
             <button class="ir-simplify-replace">Replace on page</button>
         </div>
     `;
-    
+
     // Position popup
     let left = rect.left + (rect.width / 2) - 180;
     let top = rect.bottom + 15 + window.scrollY;
-    
+
     left = Math.max(10, Math.min(left, window.innerWidth - 370));
-    
+
     popup.style.left = `${left}px`;
     popup.style.top = `${top}px`;
-    
+
     document.body.appendChild(popup);
-    
+
     // Animation
     requestAnimationFrame(() => {
         popup.classList.add('ir-visible');
     });
-    
+
     // Close button
     popup.querySelector('.ir-simplify-popup-close').addEventListener('click', () => {
         popup.classList.remove('ir-visible');
         setTimeout(() => popup.remove(), 200);
     });
-    
+
     // Copy button
     popup.querySelector('.ir-simplify-copy').addEventListener('click', async () => {
         try {
@@ -446,7 +523,7 @@ function showSimplifiedTextPopup(originalText, data, range) {
             showNotification('Failed to copy', 'error');
         }
     });
-    
+
     // Replace button
     popup.querySelector('.ir-simplify-replace').addEventListener('click', () => {
         replaceSelectionWithSimplified(range, data.simplified);
@@ -454,7 +531,7 @@ function showSimplifiedTextPopup(originalText, data, range) {
         setTimeout(() => popup.remove(), 200);
         showNotification('Text replaced on page', 'success');
     });
-    
+
     // Auto-close after 30 seconds
     setTimeout(() => {
         if (document.body.contains(popup)) {
@@ -470,19 +547,19 @@ function showSimplifiedTextPopup(originalText, data, range) {
 function replaceSelectionWithSimplified(range, simplifiedText) {
     const container = range.commonAncestorContainer;
     const rootElement = container.nodeType === Node.TEXT_NODE ? container.parentElement : container;
-    
+
     if (!rootElement) return;
-    
+
     // Create wrapper with simplified text
     const wrapper = document.createElement('span');
     wrapper.className = 'ir-simplified-text';
     wrapper.innerHTML = escapeHtml(simplifiedText);
     wrapper.title = 'This text was simplified by InclusiveRead';
-    
+
     // Replace the selection
     range.deleteContents();
     range.insertNode(wrapper);
-    
+
     // Inject styles
     injectSimplifiedTextStyles();
 }
@@ -504,7 +581,7 @@ function injectSimplifiedTextStyles() {
         background: rgba(34, 197, 94, 0.15);
     }
     `;
-    
+
     injectCSS(css, 'ir-simplified-text-styles');
 }
 
@@ -515,16 +592,16 @@ function applyJargonToSelection(jargonList, range) {
     // Get the container element of the selection
     const container = range.commonAncestorContainer;
     const rootElement = container.nodeType === Node.TEXT_NODE ? container.parentElement : container;
-    
+
     if (!rootElement) return;
-    
+
     // Apply each jargon term
     jargonList.forEach(({ jargon, simple, explanation, category, difficulty }) => {
         const regex = new RegExp(`\\b${escapeRegex(jargon)}\\b`, 'gi');
         const safeSimple = escapeHtml(simple);
         const safeExplanation = escapeHtml(explanation || '');
         const safeCategory = escapeHtml(category || 'general');
-        
+
         const walker = document.createTreeWalker(
             rootElement,
             NodeFilter.SHOW_TEXT,
@@ -532,17 +609,17 @@ function applyJargonToSelection(jargonList, range) {
                 acceptNode: node => {
                     const parent = node.parentElement;
                     if (!parent) return NodeFilter.FILTER_SKIP;
-                    
+
                     const tagName = parent.tagName.toLowerCase();
                     if (['script', 'style', 'noscript'].includes(tagName)) {
                         return NodeFilter.FILTER_SKIP;
                     }
-                    
-                    if (parent.classList.contains('ir-jargon-wrapper') || 
+
+                    if (parent.classList.contains('ir-jargon-wrapper') ||
                         parent.classList.contains('ir-jargon')) {
                         return NodeFilter.FILTER_SKIP;
                     }
-                    
+
                     if (node.textContent?.match(regex)) {
                         return NodeFilter.FILTER_ACCEPT;
                     }
@@ -550,17 +627,17 @@ function applyJargonToSelection(jargonList, range) {
                 }
             }
         );
-        
+
         const nodesToReplace = [];
         let node;
         while (node = walker.nextNode()) {
             nodesToReplace.push(node);
         }
-        
+
         nodesToReplace.forEach(textNode => {
             const parent = textNode.parentElement;
             if (!parent) return;
-            
+
             const html = textNode.textContent.replace(regex, (match) => {
                 return `<span class="ir-jargon ir-jargon-selection ir-jargon-${safeCategory} ir-difficulty-${difficulty || 2}" 
                               data-simple="${safeSimple}" 
@@ -568,14 +645,14 @@ function applyJargonToSelection(jargonList, range) {
                               data-category="${safeCategory}"
                               data-original="${escapeHtml(match)}">${match}</span>`;
             });
-            
+
             const wrapper = document.createElement('span');
             wrapper.className = 'ir-jargon-wrapper ir-selection-wrapper';
             wrapper.innerHTML = html;
             textNode.replaceWith(wrapper);
         });
     });
-    
+
     // Inject styles if not already present
     injectJargonStyles();
 }
@@ -586,9 +663,9 @@ function applyJargonToSelection(jargonList, range) {
 function showSelectionDecodedPopup(jargonList, range) {
     // Remove existing popup
     document.querySelector('.ir-selection-popup')?.remove();
-    
+
     const rect = range.getBoundingClientRect();
-    
+
     const popup = document.createElement('div');
     popup.className = 'ir-selection-popup';
     popup.innerHTML = `
@@ -623,29 +700,29 @@ function showSelectionDecodedPopup(jargonList, range) {
             <button class="ir-selection-popup-clear">Clear highlights</button>
         </div>
     `;
-    
+
     // Position popup
     let left = rect.left + (rect.width / 2) - 160;
     let top = rect.bottom + 15 + window.scrollY;
-    
+
     left = Math.max(10, Math.min(left, window.innerWidth - 330));
-    
+
     popup.style.left = `${left}px`;
     popup.style.top = `${top}px`;
-    
+
     document.body.appendChild(popup);
-    
+
     // Animation
     requestAnimationFrame(() => {
         popup.classList.add('ir-visible');
     });
-    
+
     // Close button
     popup.querySelector('.ir-selection-popup-close').addEventListener('click', () => {
         popup.classList.remove('ir-visible');
         setTimeout(() => popup.remove(), 200);
     });
-    
+
     // Clear highlights button
     popup.querySelector('.ir-selection-popup-clear').addEventListener('click', () => {
         document.querySelectorAll('.ir-selection-wrapper').forEach(wrapper => {
@@ -655,7 +732,7 @@ function showSelectionDecodedPopup(jargonList, range) {
         setTimeout(() => popup.remove(), 200);
         showNotification('Selection highlights cleared', 'info');
     });
-    
+
     // Auto-close after 15 seconds
     setTimeout(() => {
         if (document.body.contains(popup)) {
@@ -1081,7 +1158,7 @@ function injectSelectionDecoderStyles() {
         border-radius: 3px;
     }
     `;
-    
+
     injectCSS(css, 'ir-selection-decoder-styles');
 }
 
@@ -1179,9 +1256,9 @@ async function activateJargonDecoder() {
         // Smart text extraction - focus on main content
         updateProgressText('Extracting main content...');
         updateProgress(15);
-        
+
         const extractedContent = extractMainContent();
-        
+
         if (!extractedContent.text || extractedContent.text.length < 50) {
             hideProgressLoader();
             showNotification('Not enough content to analyze', 'info');
@@ -1190,10 +1267,10 @@ async function activateJargonDecoder() {
 
         updateProgress(25);
         updateProgressText('Detecting page context...');
-        
+
         // Detect page context for better analysis
         const pageContext = detectPageContext();
-        
+
         updateProgress(35);
         updateProgressText('Analyzing terminology...');
 
@@ -1234,21 +1311,21 @@ async function activateJargonDecoder() {
 
         // Apply with progressive enhancement
         await applyJargonReplacementsProgressive(response.data);
-        
+
         state.jargonMap = response.data;
-        
+
         updateProgress(95);
-        
+
         // Create glossary panel
         createGlossaryPanel(response.data);
-        
+
         updateProgress(100);
         hideProgressLoader();
-        
+
         const termCount = response.data.length;
         const categories = [...new Set(response.data.map(t => t.category))];
         showNotification(`Decoded ${termCount} terms across ${categories.length} categories`, 'success');
-        
+
     } catch (error) {
         console.error('InclusiveRead: Jargon decoder error:', error);
         hideProgressLoader();
@@ -1315,9 +1392,9 @@ function detectPageContext() {
     const url = window.location.href.toLowerCase();
     const title = document.title.toLowerCase();
     const metaDescription = document.querySelector('meta[name="description"]')?.content || '';
-    
+
     const contexts = [];
-    
+
     // URL-based detection
     const urlPatterns = {
         legal: /legal|terms|privacy|policy|agreement|contract|disclaimer/,
@@ -1366,19 +1443,19 @@ async function applyJargonReplacementsProgressive(jargonList) {
     for (const item of jargonList) {
         applyJargonReplacement(item);
         processed++;
-        
+
         // Update progress proportionally
         const baseProgress = 80;
         const progressRange = 15;
         const currentProgress = baseProgress + (progressRange * (processed / totalTerms));
         updateProgress(Math.round(currentProgress));
-        
+
         // Small delay for visual feedback
         if (processed < totalTerms) {
             await new Promise(r => setTimeout(r, 50));
         }
     }
-    
+
     // Inject final styles
     injectJargonStyles();
 }
@@ -1388,7 +1465,7 @@ async function applyJargonReplacementsProgressive(jargonList) {
  */
 function applyJargonReplacement({ jargon, simple, explanation, category, difficulty }) {
     const regex = new RegExp(`\\b${escapeRegex(jargon)}\\b`, 'gi');
-    
+
     // Escape HTML attributes
     const safeSimple = escapeHtml(simple);
     const safeExplanation = escapeHtml(explanation || '');
@@ -1402,18 +1479,18 @@ function applyJargonReplacement({ jargon, simple, explanation, category, difficu
                 // Skip already processed, scripts, styles
                 const parent = node.parentElement;
                 if (!parent) return NodeFilter.FILTER_SKIP;
-                
+
                 const tagName = parent.tagName.toLowerCase();
                 if (['script', 'style', 'noscript', 'textarea', 'input'].includes(tagName)) {
                     return NodeFilter.FILTER_SKIP;
                 }
-                
-                if (parent.classList.contains('ir-jargon-wrapper') || 
+
+                if (parent.classList.contains('ir-jargon-wrapper') ||
                     parent.classList.contains('ir-jargon') ||
                     parent.closest('.ir-glossary-panel')) {
                     return NodeFilter.FILTER_SKIP;
                 }
-                
+
                 if (node.textContent?.match(regex)) {
                     return NodeFilter.FILTER_ACCEPT;
                 }
@@ -1767,7 +1844,7 @@ function injectJargonStyles() {
   `;
 
     injectCSS(css, 'ir-jargon-styles');
-    
+
     // Fix tooltip positioning for edge cases
     requestAnimationFrame(() => {
         document.querySelectorAll('.ir-jargon').forEach(el => {
@@ -1855,17 +1932,17 @@ function escapeRegex(string) {
 
 function deactivateJargonDecoder() {
     removeCSS('ir-jargon-styles');
-    
+
     // Remove all jargon wrappers and restore original text
     document.querySelectorAll('.ir-jargon-wrapper').forEach(wrapper => {
         const text = wrapper.textContent;
         wrapper.replaceWith(text);
     });
-    
+
     // Remove glossary panel and toggle
     document.querySelector('.ir-glossary-toggle')?.remove();
     document.querySelector('.ir-glossary-panel')?.remove();
-    
+
     // Clear state
     state.jargonMap = [];
 }
@@ -1932,12 +2009,12 @@ function deactivateDyslexiaMode() {
     removeCSS('ir-dyslexia-styles');
     removeCSS('ir-dyslexia-overlay');
     removeCSS('ir-opendyslexic-font');
-    
+
     // Remove bionic reading and syllable highlighting
     document.querySelectorAll('.ir-bionic-word, .ir-syllable-word').forEach(el => {
         el.replaceWith(el.textContent);
     });
-    
+
     showNotification('Dyslexia mode deactivated', 'info');
 }
 
@@ -1951,29 +2028,31 @@ function applyDyslexiaStyles(settings) {
     removeCSS('ir-dyslexia-styles');
     removeCSS('ir-dyslexia-overlay');
     removeCSS('ir-opendyslexic-font');
-    
+
     // Inject OpenDyslexic font if selected
     if (settings.font === 'opendyslexic') {
         const fontCSS = `
             @font-face {
                 font-family: 'OpenDyslexic';
-                src: url('https://cdn.jsdelivr.net/npm/opendyslexic@3.0.0/opendyslexic-regular.woff2') format('woff2');
-                font-weight: normal;
+                src: url('https://www.cdnfonts.com/s/19472/OpenDyslexic-Regular.woff') format('woff'),
+                     url('https://cdn.jsdelivr.net/gh/antijingoist/opendyslexic@master/compiled/OpenDyslexic-Regular.otf') format('opentype');
+                font-weight: 400;
                 font-style: normal;
                 font-display: swap;
             }
             
             @font-face {
                 font-family: 'OpenDyslexic';
-                src: url('https://cdn.jsdelivr.net/npm/opendyslexic@3.0.0/opendyslexic-bold.woff2') format('woff2');
-                font-weight: bold;
+                src: url('https://www.cdnfonts.com/s/19472/OpenDyslexic-Bold.woff') format('woff'),
+                     url('https://cdn.jsdelivr.net/gh/antijingoist/opendyslexic@master/compiled/OpenDyslexic-Bold.otf') format('opentype');
+                font-weight: 700;
                 font-style: normal;
                 font-display: swap;
             }
         `;
         injectCSS(fontCSS, 'ir-opendyslexic-font');
     }
-    
+
     // Determine font family
     let fontFamily;
     switch (settings.font) {
@@ -1988,30 +2067,60 @@ function applyDyslexiaStyles(settings) {
             fontFamily = "Arial, Helvetica, sans-serif";
             break;
     }
-    
-    // Build main styles
+
+    // Build main styles - USE USER SETTINGS but with smart targeting
     const styles = `
-        body, p, div, span, li, td, th, h1, h2, h3, h4, h5, h6, 
-        a, button, input, textarea, select, label {
+        /* Apply dyslexia-friendly font to content areas */
+        article, main, .content, [role="main"],
+        p, li, td, th, blockquote, figcaption,
+        h1, h2, h3, h4, h5, h6,
+        div:not([class*="nav"]):not([class*="menu"]):not([class*="toolbar"]):not([class*="button"]) {
             font-family: ${fontFamily} !important;
+        }
+        
+        /* Apply user's spacing settings to text content */
+        p, li, td, th, blockquote {
             letter-spacing: ${settings.letterSpacing}px !important;
             line-height: ${settings.lineHeight} !important;
             word-spacing: ${settings.wordSpacing}px !important;
         }
         
-        p, div, li {
-            max-width: 70ch !important;
+        /* Headings: Apply user settings but keep them reasonable */
+        h1, h2, h3, h4, h5, h6 {
+            letter-spacing: ${settings.letterSpacing * 0.5}px !important;
+            line-height: ${Math.min(settings.lineHeight, 1.6)} !important;
         }
         
-        /* Prevent text from being too wide */
+        /* Exclude UI elements - preserve original styling */
+        nav, nav *,
+        header:not(article header):not(main header), 
+        header:not(article header):not(main header) *,
+        footer:not(article footer):not(main footer),
+        footer:not(article footer):not(main footer) *,
+        button, input, select, textarea,
+        [role="navigation"], [role="navigation"] *,
+        [role="banner"], [role="banner"] *,
+        [class*="nav"]:not(article *):not(main *),
+        [class*="menu"]:not(article *):not(main *),
+        [class*="toolbar"],
+        [class*="button"], [class*="btn"],
+        [id*="nav"]:not(article *):not(main *),
+        [id*="menu"]:not(article *):not(main *) {
+            font-family: inherit !important;
+            letter-spacing: inherit !important;
+            line-height: inherit !important;
+            word-spacing: inherit !important;
+        }
+        
+        /* Prevent layout breaks from word wrapping */
         body {
             overflow-wrap: break-word !important;
             word-wrap: break-word !important;
         }
     `;
-    
+
     injectCSS(styles, 'ir-dyslexia-styles');
-    
+
     // Apply overlay color if selected
     if (settings.overlayColor && settings.overlayColor !== 'none') {
         const overlayColors = {
@@ -2020,7 +2129,7 @@ function applyDyslexiaStyles(settings) {
             green: 'rgba(144, 238, 144, 0.3)',
             yellow: 'rgba(255, 255, 224, 0.3)'
         };
-        
+
         const overlayStyle = `
             body::before {
                 content: '';
@@ -2034,17 +2143,19 @@ function applyDyslexiaStyles(settings) {
                 z-index: 999999;
             }
         `;
-        
+
         injectCSS(overlayStyle, 'ir-dyslexia-overlay');
     }
-    
-    // Apply syllable highlighting
+
+    // Syllable highlighting - DISABLED due to Chrome crashes
+    // This feature causes performance issues and crashes on large pages
+    // TODO: Implement more efficient algorithm if needed
     if (settings.syllableHighlight) {
-        applySyllableHighlighting();
-    } else {
-        removeSyllableHighlighting();
+        console.warn('Syllable highlighting is temporarily disabled due to performance issues');
+        // showNotification('Syllable highlighting is temporarily disabled', 'info');
     }
-    
+    removeSyllableHighlighting();
+
     // Apply bionic reading
     if (settings.bionicReading) {
         applyBionicReading();
@@ -2056,25 +2167,25 @@ function applyDyslexiaStyles(settings) {
 function applySyllableHighlighting() {
     // Simple syllable detection (alternating colors)
     const textNodes = getTextNodes(document.body);
-    
+
     textNodes.forEach(node => {
         // Skip if already processed or in special elements
         if (node.parentElement?.classList.contains('ir-syllable-word') ||
             node.parentElement?.closest('.ir-jargon, .ir-selection-toolbar, script, style, code, pre')) {
             return;
         }
-        
+
         const text = node.textContent;
         const words = text.split(/(\s+)/);
-        
+
         if (words.length > 1) {
             const span = document.createElement('span');
             span.className = 'ir-syllable-word';
-            
+
             words.forEach((word, index) => {
                 const wordSpan = document.createElement('span');
                 wordSpan.textContent = word;
-                
+
                 // Alternate colors for syllables (simplified - just alternating words)
                 if (!word.trim()) {
                     wordSpan.textContent = word;
@@ -2083,10 +2194,10 @@ function applySyllableHighlighting() {
                 } else {
                     wordSpan.style.opacity = '0.7';
                 }
-                
+
                 span.appendChild(wordSpan);
             });
-            
+
             node.replaceWith(span);
         }
     });
@@ -2100,39 +2211,39 @@ function removeSyllableHighlighting() {
 
 function applyBionicReading() {
     const textNodes = getTextNodes(document.body);
-    
+
     textNodes.forEach(node => {
         // Skip if already processed or in special elements
         if (node.parentElement?.classList.contains('ir-bionic-word') ||
             node.parentElement?.closest('.ir-jargon, .ir-selection-toolbar, script, style, code, pre')) {
             return;
         }
-        
+
         const text = node.textContent;
         const words = text.split(/(\s+)/);
-        
+
         if (words.length > 1) {
             const span = document.createElement('span');
             span.className = 'ir-bionic-word';
-            
+
             words.forEach(word => {
                 if (!word.trim()) {
                     span.appendChild(document.createTextNode(word));
                 } else {
                     const wordSpan = document.createElement('span');
                     const halfLength = Math.ceil(word.length / 2);
-                    
+
                     const boldPart = document.createElement('strong');
                     boldPart.textContent = word.substring(0, halfLength);
                     boldPart.style.fontWeight = '700';
-                    
+
                     wordSpan.appendChild(boldPart);
                     wordSpan.appendChild(document.createTextNode(word.substring(halfLength)));
-                    
+
                     span.appendChild(wordSpan);
                 }
             });
-            
+
             node.replaceWith(span);
         }
     });
@@ -2165,7 +2276,7 @@ function getTextNodes(element) {
             }
         }
     );
-    
+
     let node;
     while (node = walker.nextNode()) {
         // Only process text nodes in visible elements with substantial text
@@ -2173,7 +2284,7 @@ function getTextNodes(element) {
             textNodes.push(node);
         }
     }
-    
+
     return textNodes;
 }
 
@@ -2213,7 +2324,7 @@ function updateTTSSettings(settings) {
 function createTTSControls() {
     // Remove existing controls if any
     removeTTSControls();
-    
+
     const controlPanel = document.createElement('div');
     controlPanel.id = 'ir-tts-controls';
     controlPanel.className = 'ir-tts-controls';
@@ -2246,9 +2357,9 @@ function createTTSControls() {
             </button>
         </div>
     `;
-    
+
     document.body.appendChild(controlPanel);
-    
+
     // Add event listeners
     document.getElementById('ir-tts-play').addEventListener('click', playTTS);
     document.getElementById('ir-tts-selection').addEventListener('click', playTTSSelection);
@@ -2258,7 +2369,7 @@ function createTTSControls() {
         stopTTS();
         removeTTSControls();
     });
-    
+
     injectTTSControlStyles();
 }
 
@@ -2393,7 +2504,7 @@ function injectTTSControlStyles() {
             }
         }
     `;
-    
+
     injectCSS(styles, 'ir-tts-control-styles');
 }
 
@@ -2403,7 +2514,7 @@ function initTTSEngine() {
         return;
     }
     ttsEngine = window.speechSynthesis;
-    
+
     // Load voices (some browsers need this)
     if (ttsEngine.getVoices().length === 0) {
         ttsEngine.addEventListener('voiceschanged', () => {
@@ -2436,7 +2547,7 @@ function playTTS() {
 
     // Extract main content text
     const content = extractReadableContent();
-    
+
     if (!content || content.length < 10) {
         showNotification('No readable content found on this page', 'error');
         return;
@@ -2445,7 +2556,7 @@ function playTTS() {
     // Limit text length to avoid errors (max ~32KB)
     const maxLength = 32000;
     let textToRead = content.substring(0, maxLength);
-    
+
     if (state.ttsSettings.pauseOnPunctuation) {
         // Add slight pauses after punctuation
         textToRead = textToRead
@@ -2462,21 +2573,50 @@ function playTTS() {
     state.ttsState.currentWordIndex = 0;
 
     const utterance = new SpeechSynthesisUtterance(textToRead);
-    
+
     // Ensure valid rate (0.1 to 10)
     utterance.rate = Math.max(0.1, Math.min(10, state.ttsSettings.speed || 1));
     utterance.pitch = 1;
     utterance.volume = 1;
-    
+
     // Set language
     utterance.lang = 'en-US';
-    
-    // Get available voices and set a voice
+
+    // Get available voices and select the best quality voice
     const voices = ttsEngine.getVoices();
     if (voices.length > 0) {
-        // Try to find an English voice
-        const englishVoice = voices.find(voice => voice.lang.startsWith('en')) || voices[0];
-        utterance.voice = englishVoice;
+        // Filter for English voices
+        const englishVoices = voices.filter(voice => voice.lang.startsWith('en'));
+
+        let selectedVoice = null;
+
+        // Priority 1: Try to find a high-quality neural/natural voice (Google, Microsoft, etc.)
+        // These are usually marked with keywords like "Neural", "Natural", "Premium", "Enhanced"
+        const premiumVoice = englishVoices.find(voice =>
+            voice.name.toLowerCase().includes('neural') ||
+            voice.name.toLowerCase().includes('natural') ||
+            voice.name.toLowerCase().includes('premium') ||
+            voice.name.toLowerCase().includes('enhanced') ||
+            voice.name.toLowerCase().includes('studio') ||
+            (voice.name.includes('Google') && voice.lang === 'en-US')
+        );
+
+        if (premiumVoice) {
+            selectedVoice = premiumVoice;
+        } else {
+            // Priority 2: Try to find any en-US voice (best match for language)
+            const enUSVoice = englishVoices.find(voice => voice.lang === 'en-US');
+
+            if (enUSVoice) {
+                selectedVoice = enUSVoice;
+            } else {
+                // Priority 3: Use any English voice, or first available voice
+                selectedVoice = englishVoices[0] || voices[0];
+            }
+        }
+
+        utterance.voice = selectedVoice;
+        console.log('TTS: Using voice:', selectedVoice.name, selectedVoice.lang);
     }
 
     // Word boundary event for highlighting
@@ -2508,7 +2648,7 @@ function playTTS() {
         state.ttsState.isPaused = false;
         state.ttsState.currentUtterance = null;
         clearTTSHighlight();
-        
+
         // Show user-friendly error message
         let errorMsg = 'Speech synthesis error';
         if (event.error === 'canceled') {
@@ -2525,7 +2665,7 @@ function playTTS() {
 
     // Store utterance reference
     state.ttsState.currentUtterance = utterance;
-    
+
     // Speak with a small delay to ensure everything is ready
     setTimeout(() => {
         if (state.ttsState.currentUtterance === utterance) {
@@ -2559,7 +2699,7 @@ function playTTSSelection() {
 
     // Prepare text
     let textToRead = selectedText;
-    
+
     if (state.ttsSettings.pauseOnPunctuation) {
         textToRead = textToRead
             .replace(/\./g, '. ')
@@ -2575,13 +2715,13 @@ function playTTSSelection() {
     state.ttsState.currentWordIndex = 0;
 
     const utterance = new SpeechSynthesisUtterance(textToRead);
-    
+
     // Ensure valid rate (0.1 to 10)
     utterance.rate = Math.max(0.1, Math.min(10, state.ttsSettings.speed || 1));
     utterance.pitch = 1;
     utterance.volume = 1;
     utterance.lang = 'en-US';
-    
+
     // Get available voices and set a voice
     const voices = ttsEngine.getVoices();
     if (voices.length > 0) {
@@ -2618,7 +2758,7 @@ function playTTSSelection() {
         state.ttsState.isPaused = false;
         state.ttsState.currentUtterance = null;
         clearTTSHighlight();
-        
+
         let errorMsg = 'Speech synthesis error';
         if (event.error === 'canceled') {
             errorMsg = 'Speech was stopped';
@@ -2634,7 +2774,7 @@ function playTTSSelection() {
 
     // Store utterance reference
     state.ttsState.currentUtterance = utterance;
-    
+
     // Speak with a small delay
     setTimeout(() => {
         if (state.ttsState.currentUtterance === utterance) {
@@ -2663,14 +2803,14 @@ function stopTTS() {
             console.error('Error canceling TTS:', error);
         }
     }
-    
+
     state.ttsState.isPlaying = false;
     state.ttsState.isPaused = false;
     state.ttsState.currentUtterance = null;
     state.ttsState.currentWordIndex = 0;
     state.ttsState.words = [];
     state.ttsState.textContent = '';
-    
+
     clearTTSHighlight();
     showNotification('Speech stopped', 'info');
 }
@@ -2702,11 +2842,11 @@ function extractReadableContent() {
     // Extract text from paragraphs and headings
     const textElements = contentElement.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li');
     let text = '';
-    
+
     textElements.forEach(el => {
         // Skip hidden elements
         if (el.offsetParent === null) return;
-        
+
         const elementText = el.textContent.trim();
         if (elementText.length > 0) {
             text += elementText + ' ';
@@ -2734,7 +2874,7 @@ function highlightCurrentWord(charIndex) {
 
     // Visual highlighting (simplified - highlights entire viewport)
     clearTTSHighlight();
-    
+
     // Create a floating highlight indicator
     let indicator = document.getElementById('ir-tts-indicator');
     if (!indicator) {
@@ -3031,6 +3171,115 @@ function showNotification(message, type = 'info') {
             removeCSS('ir-notification-out-styles');
         }, 300);
     }, 3000);
+}
+
+/**
+ * CSS Injection Helpers
+ */
+function injectCSS(css, id) {
+    // Remove existing style with same ID
+    removeCSS(id);
+
+    const style = document.createElement('style');
+    style.id = `ir-style-${id}`;
+    style.textContent = css;
+    document.head.appendChild(style);
+}
+
+function removeCSS(id) {
+    const existingStyle = document.getElementById(`ir-style-${id}`);
+    if (existingStyle) {
+        existingStyle.remove();
+    }
+}
+
+/**
+ * Utility: Escape HTML
+ */
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+/**
+ * Utility: Detect animations
+ */
+function detectAnimations() {
+    const animated = [];
+    document.querySelectorAll('*').forEach(el => {
+        const style = window.getComputedStyle(el);
+        if (style.animationName !== 'none' || style.transition !== 'none') {
+            animated.push(el);
+        }
+    });
+    return animated;
+}
+
+/**
+ * Utility: Extract readable content for TTS
+ */
+function extractReadableContent() {
+    // Try to find main content area
+    const mainSelectors = [
+        'main',
+        'article',
+        '[role="main"]',
+        '.main-content',
+        '#content',
+        '#main',
+        '.content'
+    ];
+
+    let contentElement = null;
+    for (const selector of mainSelectors) {
+        contentElement = document.querySelector(selector);
+        if (contentElement) break;
+    }
+
+    // Fallback to body if no main content found
+    if (!contentElement) {
+        contentElement = document.body;
+    }
+
+    // Extract text, excluding scripts, styles, and hidden elements
+    const textNodes = [];
+    const walker = document.createTreeWalker(
+        contentElement,
+        NodeFilter.SHOW_TEXT,
+        {
+            acceptNode: (node) => {
+                const parent = node.parentElement;
+                if (!parent) return NodeFilter.FILTER_REJECT;
+
+                // Skip non-content elements
+                const tagName = parent.tagName.toLowerCase();
+                if (['script', 'style', 'noscript', 'iframe', 'object'].includes(tagName)) {
+                    return NodeFilter.FILTER_REJECT;
+                }
+
+                // Skip hidden elements
+                const style = window.getComputedStyle(parent);
+                if (style.display === 'none' || style.visibility === 'hidden') {
+                    return NodeFilter.FILTER_REJECT;
+                }
+
+                // Skip empty/whitespace-only nodes
+                if (!node.textContent.trim()) {
+                    return NodeFilter.FILTER_REJECT;
+                }
+
+                return NodeFilter.FILTER_ACCEPT;
+            }
+        }
+    );
+
+    let node;
+    while (node = walker.nextNode()) {
+        textNodes.push(node.textContent);
+    }
+
+    return textNodes.join(' ').replace(/\s+/g, ' ').trim();
 }
 
 console.log('InclusiveRead content script loaded');
