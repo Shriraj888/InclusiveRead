@@ -16,10 +16,10 @@ async function handleMessage(request, sender) {
             return await testApiKeyHandler(request.apiKey);
 
         case 'detectJargon':
-            return await detectJargonHandler(request.pageText, request.apiKey);
+            return await detectJargonHandler(request.pageText, request.apiKey, request.abortSignal);
 
         case 'simplifyText':
-            return await simplifyTextHandler(request.text, request.apiKey);
+            return await simplifyTextHandler(request.text, request.apiKey, request.abortSignal);
 
         default:
             return { success: false, error: 'Unknown action' };
@@ -41,11 +41,19 @@ async function testApiKeyHandler(apiKey) {
 /**
  * Detect jargon
  */
-async function detectJargonHandler(pageText, apiKey) {
+async function detectJargonHandler(pageText, apiKey, abortSignal) {
     try {
+        // Check if already aborted
+        if (abortSignal) {
+            return { success: false, error: 'Request aborted', aborted: true };
+        }
+        
         const result = await detectJargon(pageText, apiKey);
         return { success: true, data: result };
     } catch (error) {
+        if (error.name === 'AbortError') {
+            return { success: false, error: 'Request aborted', aborted: true };
+        }
         return { success: false, error: error.message };
     }
 }
@@ -53,11 +61,19 @@ async function detectJargonHandler(pageText, apiKey) {
 /**
  * Simplify text into plain English
  */
-async function simplifyTextHandler(text, apiKey) {
+async function simplifyTextHandler(text, apiKey, abortSignal) {
     try {
+        // Check if already aborted
+        if (abortSignal) {
+            return { success: false, error: 'Request aborted', aborted: true };
+        }
+        
         const result = await simplifyText(text, apiKey);
         return { success: true, data: result };
     } catch (error) {
+        if (error.name === 'AbortError') {
+            return { success: false, error: 'Request aborted', aborted: true };
+        }
         return { success: false, error: error.message };
     }
 }

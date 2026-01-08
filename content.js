@@ -10,6 +10,8 @@ let state = {
     jargonMap: [],
     animatedElements: [],
     selectionDecoderActive: false,
+    abortController: null,
+    isGenerating: false,
     dyslexiaSettings: {
         font: 'opendyslexic',
         letterSpacing: 1,
@@ -332,11 +334,16 @@ async function decodeSelectedText(selectedText, range) {
     // Show mini loader
     showProgressLoader('Decoding selection...', 'jargon');
     updateProgress(10);
+    
+    // Create abort controller
+    state.abortController = new AbortController();
+    state.isGenerating = true;
 
     // Get API key
     const { apiKey } = await chrome.storage.sync.get('apiKey');
     if (!apiKey) {
         hideProgressLoader();
+        state.isGenerating = false;
         showNotification('Please configure your API key first', 'error');
         return;
     }
@@ -350,13 +357,22 @@ async function decodeSelectedText(selectedText, range) {
         const response = await chrome.runtime.sendMessage({
             action: 'detectJargon',
             pageText: selectedText,
-            apiKey
+            apiKey,
+            abortSignal: state.abortController.signal.aborted
         });
+        
+        // Check if stopped
+        if (!state.isGenerating || state.abortController.signal.aborted) {
+            hideProgressLoader();
+            return;
+        }
 
         updateProgress(70);
 
         if (!response.success || !response.data || response.data.length === 0) {
             hideProgressLoader();
+            state.isGenerating = false;
+            state.abortController = null;
             showNotification('No complex terms found in selection', 'info');
             return;
         }
@@ -369,6 +385,8 @@ async function decodeSelectedText(selectedText, range) {
 
         updateProgress(100);
         hideProgressLoader();
+        state.isGenerating = false;
+        state.abortController = null;
 
         // Show result popup
         showSelectionDecodedPopup(response.data, range);
@@ -376,7 +394,12 @@ async function decodeSelectedText(selectedText, range) {
     } catch (error) {
         console.error('Selection decode error:', error);
         hideProgressLoader();
-        showNotification('Error decoding selection', 'error');
+        state.isGenerating = false;
+        state.abortController = null;
+        
+        if (error.name !== 'AbortError') {
+            showNotification('Error decoding selection', 'error');
+        }
     }
 }
 
@@ -387,11 +410,16 @@ async function simplifySelectedText(selectedText, range) {
     // Show loader
     showProgressLoader('Simplifying text...', 'jargon');
     updateProgress(10);
+    
+    // Create abort controller
+    state.abortController = new AbortController();
+    state.isGenerating = true;
 
     // Get API key
     const { apiKey } = await chrome.storage.sync.get('apiKey');
     if (!apiKey) {
         hideProgressLoader();
+        state.isGenerating = false;
         showNotification('Please configure your API key first', 'error');
         return;
     }
@@ -405,13 +433,22 @@ async function simplifySelectedText(selectedText, range) {
         const response = await chrome.runtime.sendMessage({
             action: 'simplifyText',
             text: selectedText,
-            apiKey
+            apiKey,
+            abortSignal: state.abortController.signal.aborted
         });
+        
+        // Check if stopped
+        if (!state.isGenerating || state.abortController.signal.aborted) {
+            hideProgressLoader();
+            return;
+        }
 
         updateProgress(80);
 
         if (!response.success || !response.data || !response.data.simplified) {
             hideProgressLoader();
+            state.isGenerating = false;
+            state.abortController = null;
             showNotification('Could not simplify this text', 'info');
             return;
         }
@@ -419,6 +456,8 @@ async function simplifySelectedText(selectedText, range) {
         updateProgressText('Done!');
         updateProgress(100);
         hideProgressLoader();
+        state.isGenerating = false;
+        state.abortController = null;
 
         // Show simplified text popup
         showSimplifiedTextPopup(selectedText, response.data, range);
@@ -426,8 +465,128 @@ async function simplifySelectedText(selectedText, range) {
     } catch (error) {
         console.error('Text simplification error:', error);
         hideProgressLoader();
-        showNotification('Error simplifying text', 'error');
+        state.isGenerating = false;
+        state.abortController = null;
+        
+        if (error.name !== 'AbortError') {
+            showNotification('Error simplifying text', 'error');
+        }
     }
+}
+
+/**
+ * Make an element draggable by its header
+ * @param {HTMLElement} popup - The popup element to make draggable
+ * @param {string} headerSelector - CSS selector for the drag handle (header)
+ */
+function makeDraggable(popup, headerSelector) {
+    const header = popup.querySelector(headerSelector);
+    if (!header) return;
+
+    let isDragging = false;
+    let startX, startY, initialX, initialY;
+
+    // Add drag cursor to header
+    header.style.cursor = 'grab';
+    header.style.userSelect = 'none';
+
+    const onMouseDown = (e) => {
+        // Don't start drag if clicking on buttons
+        if (e.target.closest('button')) return;
+        
+        isDragging = true;
+        header.style.cursor = 'grabbing';
+        
+        // Get current position
+        const rect = popup.getBoundingClientRect();
+        initialX = rect.left;
+        initialY = rect.top;
+        
+        startX = e.clientX;
+        startY = e.clientY;
+        
+        // Prevent text selection while dragging
+        e.preventDefault();
+        
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    };
+
+    const onMouseMove = (e) => {
+        if (!isDragging) return;
+        
+        const deltaX = e.clientX - startX;
+        const deltaY = e.clientY - startY;
+        
+        let newX = initialX + deltaX;
+        let newY = initialY + deltaY;
+        
+        // Keep popup within viewport bounds
+        const popupRect = popup.getBoundingClientRect();
+        const maxX = window.innerWidth - popupRect.width;
+        const maxY = window.innerHeight - popupRect.height;
+        
+        newX = Math.max(0, Math.min(newX, maxX));
+        newY = Math.max(0, Math.min(newY, maxY));
+        
+        // Update position (use fixed positioning for smoother dragging)
+        popup.style.position = 'fixed';
+        popup.style.left = `${newX}px`;
+        popup.style.top = `${newY}px`;
+        popup.style.transform = 'none'; // Remove any transform
+    };
+
+    const onMouseUp = () => {
+        isDragging = false;
+        header.style.cursor = 'grab';
+        
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    header.addEventListener('mousedown', onMouseDown);
+    
+    // Touch support for mobile
+    header.addEventListener('touchstart', (e) => {
+        if (e.target.closest('button')) return;
+        
+        isDragging = true;
+        const touch = e.touches[0];
+        
+        const rect = popup.getBoundingClientRect();
+        initialX = rect.left;
+        initialY = rect.top;
+        
+        startX = touch.clientX;
+        startY = touch.clientY;
+    }, { passive: true });
+    
+    header.addEventListener('touchmove', (e) => {
+        if (!isDragging) return;
+        
+        const touch = e.touches[0];
+        const deltaX = touch.clientX - startX;
+        const deltaY = touch.clientY - startY;
+        
+        let newX = initialX + deltaX;
+        let newY = initialY + deltaY;
+        
+        const popupRect = popup.getBoundingClientRect();
+        const maxX = window.innerWidth - popupRect.width;
+        const maxY = window.innerHeight - popupRect.height;
+        
+        newX = Math.max(0, Math.min(newX, maxX));
+        newY = Math.max(0, Math.min(newY, maxY));
+        
+        popup.style.position = 'fixed';
+        popup.style.left = `${newX}px`;
+        popup.style.top = `${newY}px`;
+        popup.style.transform = 'none';
+    }, { passive: true });
+    
+    header.addEventListener('touchend', () => {
+        isDragging = false;
+    });
 }
 
 /**
@@ -442,7 +601,7 @@ function showSimplifiedTextPopup(originalText, data, range) {
     const popup = document.createElement('div');
     popup.className = 'ir-simplify-popup';
     popup.innerHTML = `
-        <div class="ir-simplify-popup-header">
+        <div class="ir-simplify-popup-header ir-draggable-header">
             <span class="ir-simplify-popup-title">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -451,6 +610,7 @@ function showSimplifiedTextPopup(originalText, data, range) {
                     <line x1="16" y1="17" x2="8" y2="17"/>
                 </svg>
                 Simplified Version
+                <span class="ir-drag-hint">⋮⋮</span>
             </span>
             <div class="ir-simplify-popup-actions">
                 <button class="ir-simplify-copy" title="Copy simplified text">
@@ -502,6 +662,9 @@ function showSimplifiedTextPopup(originalText, data, range) {
     popup.style.top = `${top}px`;
 
     document.body.appendChild(popup);
+
+    // Make popup draggable
+    makeDraggable(popup, '.ir-simplify-popup-header');
 
     // Animation
     requestAnimationFrame(() => {
@@ -669,13 +832,14 @@ function showSelectionDecodedPopup(jargonList, range) {
     const popup = document.createElement('div');
     popup.className = 'ir-selection-popup';
     popup.innerHTML = `
-        <div class="ir-selection-popup-header">
+        <div class="ir-selection-popup-header ir-draggable-header">
             <span class="ir-selection-popup-title">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                     <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
                     <polyline points="22 4 12 14.01 9 11.01"/>
                 </svg>
                 Decoded ${jargonList.length} term${jargonList.length > 1 ? 's' : ''}
+                <span class="ir-drag-hint">⋮⋮</span>
             </span>
             <button class="ir-selection-popup-close">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -711,6 +875,9 @@ function showSelectionDecodedPopup(jargonList, range) {
     popup.style.top = `${top}px`;
 
     document.body.appendChild(popup);
+
+    // Make popup draggable
+    makeDraggable(popup, '.ir-selection-popup-header');
 
     // Animation
     requestAnimationFrame(() => {
@@ -828,12 +995,36 @@ function injectSelectionDecoderStyles() {
         overflow: hidden;
         opacity: 0;
         transform: translateY(10px);
-        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s;
     }
     
     .ir-selection-popup.ir-visible {
         opacity: 1;
-        transform: translateY(0);
+        transform: none;
+    }
+    
+    /* Draggable header styles */
+    .ir-draggable-header {
+        cursor: grab;
+        user-select: none;
+    }
+    
+    .ir-draggable-header:active {
+        cursor: grabbing;
+    }
+    
+    .ir-drag-hint {
+        font-size: 12px;
+        color: #444;
+        margin-left: 6px;
+        letter-spacing: 2px;
+        opacity: 0.6;
+        transition: opacity 0.2s;
+    }
+    
+    .ir-draggable-header:hover .ir-drag-hint {
+        opacity: 1;
+        color: #666;
     }
     
     .ir-selection-popup-header {
@@ -986,12 +1177,12 @@ function injectSelectionDecoderStyles() {
         overflow: hidden;
         opacity: 0;
         transform: translateY(10px);
-        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s;
     }
     
     .ir-simplify-popup.ir-visible {
         opacity: 1;
-        transform: translateY(0);
+        transform: none;
     }
     
     .ir-simplify-popup-header {
@@ -1241,12 +1432,17 @@ async function activateJargonDecoder() {
     // Show loader
     showProgressLoader('Initializing Jargon Decoder...', 'jargon');
     updateProgress(5);
+    
+    // Create abort controller for this generation
+    state.abortController = new AbortController();
+    state.isGenerating = true;
 
     // Get API key
     const { apiKey } = await chrome.storage.sync.get('apiKey');
     if (!apiKey) {
         console.warn('InclusiveRead: No API key configured');
         hideProgressLoader();
+        state.isGenerating = false;
         showNotification('Please configure your API key first', 'error');
         return;
     }
@@ -1292,13 +1488,21 @@ async function activateJargonDecoder() {
             action: 'detectJargon',
             pageText: extractedContent.text,
             context: pageContext,
-            apiKey
+            apiKey,
+            abortSignal: state.abortController.signal.aborted
         });
+        
+        // Check if generation was stopped
+        if (!state.isGenerating || state.abortController.signal.aborted) {
+            hideProgressLoader();
+            return;
+        }
 
         updateProgress(70);
 
         if (!response.success || !response.data || response.data.length === 0) {
             hideProgressLoader();
+            state.isGenerating = false;
             showNotification('No complex terms found', 'info');
             return;
         }
@@ -1321,6 +1525,8 @@ async function activateJargonDecoder() {
 
         updateProgress(100);
         hideProgressLoader();
+        state.isGenerating = false;
+        state.abortController = null;
 
         const termCount = response.data.length;
         const categories = [...new Set(response.data.map(t => t.category))];
@@ -1329,7 +1535,13 @@ async function activateJargonDecoder() {
     } catch (error) {
         console.error('InclusiveRead: Jargon decoder error:', error);
         hideProgressLoader();
-        showNotification('Error analyzing page content', 'error');
+        state.isGenerating = false;
+        state.abortController = null;
+        
+        // Don't show error if user stopped generation
+        if (error.name !== 'AbortError') {
+            showNotification('Error analyzing page content', 'error');
+        }
     }
 }
 
@@ -1698,11 +1910,11 @@ function injectJargonStyles() {
       z-index: 999998;
       overflow: hidden;
       display: none;
-      animation: ir-panel-in 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
     
     .ir-glossary-panel.active {
       display: block;
+      animation: ir-panel-in 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
     
     @keyframes ir-panel-in {
@@ -1885,12 +2097,13 @@ function createGlossaryPanel(jargonList) {
     const panel = document.createElement('div');
     panel.className = 'ir-glossary-panel';
     panel.innerHTML = `
-        <div class="ir-glossary-header">
+        <div class="ir-glossary-header ir-draggable-header">
             <span class="ir-glossary-title">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                     <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>
                 </svg>
                 Glossary (${jargonList.length} terms)
+                <span class="ir-drag-hint">⋮⋮</span>
             </span>
             <button class="ir-glossary-close">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1915,6 +2128,9 @@ function createGlossaryPanel(jargonList) {
 
     document.body.appendChild(toggle);
     document.body.appendChild(panel);
+
+    // Make glossary panel draggable
+    makeDraggable(panel, '.ir-glossary-header');
 
     // Event listeners
     toggle.addEventListener('click', () => {
@@ -2919,6 +3135,12 @@ function showProgressLoader(text = 'Processing...', feature = 'jargon') {
             <span class="loader-letter">g</span>
             <div class="loader"></div>
         </div>
+        <button class="ir-stop-button" id="ir-stop-generation">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6" y="6" width="12" height="12" rx="2"/>
+            </svg>
+            <span>Stop</span>
+        </button>
     `;
 
     const styles = `
@@ -3040,10 +3262,49 @@ function showProgressLoader(text = 'Processing...', feature = 'jargon') {
             letter-spacing: 0.3px;
             text-align: center;
         }
+        
+        .ir-stop-button {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 24px;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 12px;
+            color: #ef4444;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-top: 20px;
+        }
+        
+        .ir-stop-button:hover {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: rgba(239, 68, 68, 0.5);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
+        }
+        
+        .ir-stop-button:active {
+            transform: translateY(0);
+        }
+        
+        .ir-stop-button svg {
+            width: 16px;
+            height: 16px;
+        }
     `;
 
     injectCSS(styles, 'ir-progress-styles');
     document.body.appendChild(overlay);
+    
+    // Add event listener to stop button
+    const stopButton = overlay.querySelector('#ir-stop-generation');
+    if (stopButton) {
+        stopButton.addEventListener('click', stopGeneration);
+    }
 }
 
 function updateProgress(percentage) {
@@ -3071,6 +3332,19 @@ function hideProgressLoader() {
             removeCSS('ir-progress-out-styles');
         }, 300);
     }
+}
+
+/**
+ * Stop the current generation process
+ */
+function stopGeneration() {
+    if (state.abortController) {
+        state.abortController.abort();
+        state.abortController = null;
+    }
+    state.isGenerating = false;
+    hideProgressLoader();
+    showNotification('Generation stopped', 'info');
 }
 
 /**
