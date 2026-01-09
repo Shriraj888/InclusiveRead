@@ -334,7 +334,7 @@ async function decodeSelectedText(selectedText, range) {
     // Show mini loader
     showProgressLoader('Decoding selection...', 'jargon');
     updateProgress(10);
-    
+
     // Create abort controller
     state.abortController = new AbortController();
     state.isGenerating = true;
@@ -360,7 +360,7 @@ async function decodeSelectedText(selectedText, range) {
             apiKey,
             abortSignal: state.abortController.signal.aborted
         });
-        
+
         // Check if stopped
         if (!state.isGenerating || state.abortController.signal.aborted) {
             hideProgressLoader();
@@ -396,7 +396,7 @@ async function decodeSelectedText(selectedText, range) {
         hideProgressLoader();
         state.isGenerating = false;
         state.abortController = null;
-        
+
         if (error.name !== 'AbortError') {
             showNotification('Error decoding selection', 'error');
         }
@@ -410,7 +410,7 @@ async function simplifySelectedText(selectedText, range) {
     // Show loader
     showProgressLoader('Simplifying text...', 'jargon');
     updateProgress(10);
-    
+
     // Create abort controller
     state.abortController = new AbortController();
     state.isGenerating = true;
@@ -436,7 +436,7 @@ async function simplifySelectedText(selectedText, range) {
             apiKey,
             abortSignal: state.abortController.signal.aborted
         });
-        
+
         // Check if stopped
         if (!state.isGenerating || state.abortController.signal.aborted) {
             hideProgressLoader();
@@ -467,7 +467,7 @@ async function simplifySelectedText(selectedText, range) {
         hideProgressLoader();
         state.isGenerating = false;
         state.abortController = null;
-        
+
         if (error.name !== 'AbortError') {
             showNotification('Error simplifying text', 'error');
         }
@@ -493,42 +493,42 @@ function makeDraggable(popup, headerSelector) {
     const onMouseDown = (e) => {
         // Don't start drag if clicking on buttons
         if (e.target.closest('button')) return;
-        
+
         isDragging = true;
         header.style.cursor = 'grabbing';
-        
+
         // Get current position
         const rect = popup.getBoundingClientRect();
         initialX = rect.left;
         initialY = rect.top;
-        
+
         startX = e.clientX;
         startY = e.clientY;
-        
+
         // Prevent text selection while dragging
         e.preventDefault();
-        
+
         document.addEventListener('mousemove', onMouseMove);
         document.addEventListener('mouseup', onMouseUp);
     };
 
     const onMouseMove = (e) => {
         if (!isDragging) return;
-        
+
         const deltaX = e.clientX - startX;
         const deltaY = e.clientY - startY;
-        
+
         let newX = initialX + deltaX;
         let newY = initialY + deltaY;
-        
+
         // Keep popup within viewport bounds
         const popupRect = popup.getBoundingClientRect();
         const maxX = window.innerWidth - popupRect.width;
         const maxY = window.innerHeight - popupRect.height;
-        
+
         newX = Math.max(0, Math.min(newX, maxX));
         newY = Math.max(0, Math.min(newY, maxY));
-        
+
         // Update position (use fixed positioning for smoother dragging)
         popup.style.position = 'fixed';
         popup.style.left = `${newX}px`;
@@ -539,51 +539,51 @@ function makeDraggable(popup, headerSelector) {
     const onMouseUp = () => {
         isDragging = false;
         header.style.cursor = 'grab';
-        
+
         document.removeEventListener('mousemove', onMouseMove);
         document.removeEventListener('mouseup', onMouseUp);
     };
 
     header.addEventListener('mousedown', onMouseDown);
-    
+
     // Touch support for mobile
     header.addEventListener('touchstart', (e) => {
         if (e.target.closest('button')) return;
-        
+
         isDragging = true;
         const touch = e.touches[0];
-        
+
         const rect = popup.getBoundingClientRect();
         initialX = rect.left;
         initialY = rect.top;
-        
+
         startX = touch.clientX;
         startY = touch.clientY;
     }, { passive: true });
-    
+
     header.addEventListener('touchmove', (e) => {
         if (!isDragging) return;
-        
+
         const touch = e.touches[0];
         const deltaX = touch.clientX - startX;
         const deltaY = touch.clientY - startY;
-        
+
         let newX = initialX + deltaX;
         let newY = initialY + deltaY;
-        
+
         const popupRect = popup.getBoundingClientRect();
         const maxX = window.innerWidth - popupRect.width;
         const maxY = window.innerHeight - popupRect.height;
-        
+
         newX = Math.max(0, Math.min(newX, maxX));
         newY = Math.max(0, Math.min(newY, maxY));
-        
+
         popup.style.position = 'fixed';
         popup.style.left = `${newX}px`;
         popup.style.top = `${newY}px`;
         popup.style.transform = 'none';
     }, { passive: true });
-    
+
     header.addEventListener('touchend', () => {
         isDragging = false;
     });
@@ -713,11 +713,52 @@ function replaceSelectionWithSimplified(range, simplifiedText) {
 
     if (!rootElement) return;
 
-    // Create wrapper with simplified text
+    // Get the first element in the range to extract styles
+    let styleReference = rootElement;
+    if (rootElement.nodeType === Node.ELEMENT_NODE) {
+        // Try to get the first paragraph or meaningful element in the selection
+        const firstParagraph = rootElement.querySelector('p, div, span, h1, h2, h3, h4, h5, h6');
+        if (firstParagraph) {
+            styleReference = firstParagraph;
+        }
+    }
+
+    // Extract computed styles from the original content
+    const computedStyle = window.getComputedStyle(styleReference);
+    const fontSize = computedStyle.fontSize;
+    const lineHeight = computedStyle.lineHeight;
+    // Don't capture font-family - let dyslexic mode apply if enabled
+    const fontWeight = computedStyle.fontWeight;
+    const color = computedStyle.color;
+    const letterSpacing = computedStyle.letterSpacing;
+
+    // Create wrapper with simplified text, preserving paragraph breaks
     const wrapper = document.createElement('span');
     wrapper.className = 'ir-simplified-text';
-    wrapper.innerHTML = escapeHtml(simplifiedText);
     wrapper.title = 'This text was simplified by InclusiveRead';
+
+    // Apply inherited styles to maintain consistency
+    // NOTE: We don't set font-family here to allow dyslexic mode fonts to apply
+    wrapper.style.fontSize = fontSize;
+    wrapper.style.lineHeight = lineHeight;
+    wrapper.style.fontWeight = fontWeight;
+    wrapper.style.color = color;
+    wrapper.style.letterSpacing = letterSpacing;
+    wrapper.style.display = 'inline'; // Keep inline to maintain flow
+
+    // Convert the simplified text to proper HTML, preserving line breaks
+    const paragraphs = simplifiedText.split('\n\n').filter(p => p.trim());
+
+    if (paragraphs.length > 1) {
+        // Multiple paragraphs - create proper structure
+        wrapper.style.display = 'block';
+        wrapper.innerHTML = paragraphs
+            .map(para => `<p style="margin: 0 0 1em 0; padding: 0; font-size: inherit; line-height: inherit; font-weight: inherit; color: inherit;">${escapeHtml(para.trim())}</p>`)
+            .join('');
+    } else {
+        // Single paragraph or inline text
+        wrapper.innerHTML = escapeHtml(simplifiedText.replace(/\n/g, ' ').trim());
+    }
 
     // Replace the selection
     range.deleteContents();
@@ -738,10 +779,20 @@ function injectSimplifiedTextStyles() {
         padding: 2px 6px;
         border-radius: 4px;
         transition: background 0.2s;
+        /* Don't override font properties - they're inherited from original */
     }
     
     .ir-simplified-text:hover {
         background: rgba(34, 197, 94, 0.15);
+    }
+    
+    .ir-simplified-text p {
+        margin: 0 0 1em 0;
+        padding: 0;
+    }
+    
+    .ir-simplified-text p:last-child {
+        margin-bottom: 0;
     }
     `;
 
@@ -1432,7 +1483,7 @@ async function activateJargonDecoder() {
     // Show loader
     showProgressLoader('Initializing Jargon Decoder...', 'jargon');
     updateProgress(5);
-    
+
     // Create abort controller for this generation
     state.abortController = new AbortController();
     state.isGenerating = true;
@@ -1491,7 +1542,7 @@ async function activateJargonDecoder() {
             apiKey,
             abortSignal: state.abortController.signal.aborted
         });
-        
+
         // Check if generation was stopped
         if (!state.isGenerating || state.abortController.signal.aborted) {
             hideProgressLoader();
@@ -1537,7 +1588,7 @@ async function activateJargonDecoder() {
         hideProgressLoader();
         state.isGenerating = false;
         state.abortController = null;
-        
+
         // Don't show error if user stopped generation
         if (error.name !== 'AbortError') {
             showNotification('Error analyzing page content', 'error');
@@ -3299,7 +3350,7 @@ function showProgressLoader(text = 'Processing...', feature = 'jargon') {
 
     injectCSS(styles, 'ir-progress-styles');
     document.body.appendChild(overlay);
-    
+
     // Add event listener to stop button
     const stopButton = overlay.querySelector('#ir-stop-generation');
     if (stopButton) {
