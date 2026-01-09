@@ -728,25 +728,34 @@ function replaceSelectionWithSimplified(range, simplifiedText) {
 
     // Extract computed styles from the original content
     const computedStyle = window.getComputedStyle(styleReference);
+    const fontFamily = computedStyle.fontFamily;
     const fontSize = computedStyle.fontSize;
     const lineHeight = computedStyle.lineHeight;
-    // Don't capture font-family - let dyslexic mode apply if enabled
     const fontWeight = computedStyle.fontWeight;
     const color = computedStyle.color;
     const letterSpacing = computedStyle.letterSpacing;
+    const wordSpacing = computedStyle.wordSpacing;
 
     // Create wrapper with simplified text, preserving paragraph breaks
     const wrapper = document.createElement('span');
     wrapper.className = 'ir-simplified-text';
     wrapper.title = 'This text was simplified by InclusiveRead';
 
-    // Apply inherited styles to maintain consistency
-    // NOTE: We don't set font-family here to allow dyslexic mode fonts to apply
+    // Store original styles as data attributes for later use
+    wrapper.setAttribute('data-original-font', fontFamily);
+    wrapper.setAttribute('data-original-size', fontSize);
+    wrapper.setAttribute('data-original-line-height', lineHeight);
+    wrapper.setAttribute('data-original-letter-spacing', letterSpacing);
+    wrapper.setAttribute('data-original-word-spacing', wordSpacing);
+
+    // Apply captured styles - these will be overridden by dyslexia mode when active
+    wrapper.style.fontFamily = fontFamily;
     wrapper.style.fontSize = fontSize;
     wrapper.style.lineHeight = lineHeight;
     wrapper.style.fontWeight = fontWeight;
     wrapper.style.color = color;
     wrapper.style.letterSpacing = letterSpacing;
+    wrapper.style.wordSpacing = wordSpacing;
     wrapper.style.display = 'inline'; // Keep inline to maintain flow
 
     // Convert the simplified text to proper HTML, preserving line breaks
@@ -756,7 +765,7 @@ function replaceSelectionWithSimplified(range, simplifiedText) {
         // Multiple paragraphs - create proper structure
         wrapper.style.display = 'block';
         wrapper.innerHTML = paragraphs
-            .map(para => `<p style="margin: 0 0 1em 0; padding: 0; font-size: inherit; line-height: inherit; font-weight: inherit; color: inherit;">${escapeHtml(para.trim())}</p>`)
+            .map(para => `<p style="margin: 0 0 1em 0; padding: 0; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; color: inherit; letter-spacing: inherit; word-spacing: inherit;">${escapeHtml(para.trim())}</p>`)
             .join('');
     } else {
         // Single paragraph or inline text
@@ -782,7 +791,6 @@ function injectSimplifiedTextStyles() {
         padding: 2px 6px;
         border-radius: 4px;
         transition: background 0.2s;
-        /* Don't override font properties - they're inherited from original */
     }
     
     .ir-simplified-text:hover {
@@ -792,6 +800,12 @@ function injectSimplifiedTextStyles() {
     .ir-simplified-text p {
         margin: 0 0 1em 0;
         padding: 0;
+        font-family: inherit;
+        font-size: inherit;
+        line-height: inherit;
+        letter-spacing: inherit;
+        word-spacing: inherit;
+        color: inherit;
     }
     
     .ir-simplified-text p:last-child {
@@ -1804,7 +1818,21 @@ function escapeHtml(str) {
  */
 function injectJargonStyles() {
     const css = `
-    /* Jargon Base Styles */
+    /* Jargon Base Styles - Force inheritance */
+    .ir-jargon-wrapper,
+    .ir-selection-wrapper,
+    .ir-jargon-wrapper *,
+    .ir-selection-wrapper * {
+      all: unset;
+      display: inline;
+      font-family: inherit !important;
+      letter-spacing: inherit !important;
+      word-spacing: inherit !important;
+      line-height: inherit !important;
+      font-size: inherit !important;
+      color: inherit !important;
+    }
+    
     .ir-jargon {
       background: rgba(255, 255, 255, 0.06);
       border-bottom: 2px dotted currentColor;
@@ -1819,14 +1847,8 @@ function injectJargonStyles() {
       letter-spacing: inherit !important;
       word-spacing: inherit !important;
       line-height: inherit !important;
-    }
-    
-    .ir-jargon-wrapper,
-    .ir-selection-wrapper {
-      font-family: inherit !important;
-      letter-spacing: inherit !important;
-      word-spacing: inherit !important;
-      line-height: inherit !important;
+      font-size: inherit !important;
+      color: inherit !important;
     }
     
     .ir-jargon:hover {
@@ -2373,12 +2395,14 @@ function applyDyslexiaStyles(settings) {
             line-height: ${Math.min(settings.lineHeight, 1.6)} !important;
         }
         
-        /* Apply dyslexia styles to jargon decoder elements */
+        /* Apply dyslexia styles to jargon decoder and simplified text elements */
         .ir-jargon,
         .ir-jargon-wrapper,
         .ir-selection-wrapper,
+        .ir-simplified-text,
         .ir-jargon-wrapper span,
-        .ir-selection-wrapper span {
+        .ir-selection-wrapper span,
+        .ir-simplified-text p {
             font-family: ${fontFamily} !important;
             letter-spacing: ${settings.letterSpacing}px !important;
             word-spacing: ${settings.wordSpacing}px !important;
