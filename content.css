@@ -2,10 +2,8 @@
 
 /* These styles are injected dynamically but defined here for reference */
 
-/* Base reset for extension elements */
+/* Base reset for extension elements - excludes jargon elements to preserve font inheritance */
 .ir-spotlight,
-.ir-jargon,
-.ir-jargon-wrapper,
 .ir-frozen {
     all: initial;
 }

@@ -1812,6 +1812,18 @@ function injectJargonStyles() {
       border-radius: 3px;
       transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
       text-decoration: none;
+      font-family: inherit !important;
+      letter-spacing: inherit !important;
+      word-spacing: inherit !important;
+      line-height: inherit !important;
+    }
+    
+    .ir-jargon-wrapper,
+    .ir-selection-wrapper {
+      font-family: inherit !important;
+      letter-spacing: inherit !important;
+      word-spacing: inherit !important;
+      line-height: inherit !important;
     }
     
     .ir-jargon:hover {
@@ -2356,6 +2368,17 @@ function applyDyslexiaStyles(settings) {
         h1, h2, h3, h4, h5, h6 {
             letter-spacing: ${settings.letterSpacing * 0.5}px !important;
             line-height: ${Math.min(settings.lineHeight, 1.6)} !important;
+        }
+        
+        /* Apply dyslexia styles to jargon decoder elements */
+        .ir-jargon,
+        .ir-jargon-wrapper,
+        .ir-selection-wrapper,
+        .ir-jargon-wrapper span,
+        .ir-selection-wrapper span {
+            font-family: ${fontFamily} !important;
+            letter-spacing: ${settings.letterSpacing}px !important;
+            word-spacing: ${settings.wordSpacing}px !important;
         }
         
         /* Exclude UI elements - preserve original styling */
