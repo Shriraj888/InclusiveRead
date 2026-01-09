@@ -46,13 +46,12 @@ chrome.storage.sync.get([
   'ttsEnabled',
   'ttsSpeed',
   'ttsPauseOnPunctuation',
-  'ttsWordHighlight',
-  'apiKey'
+  'ttsWordHighlight'
 ], (result) => {
   jargonToggle.checked = result.jargonEnabled || false;
   sensoryToggle.checked = result.sensoryEnabled || false;
   dyslexiaToggle.checked = result.dyslexiaEnabled || false;
-  
+
   // Dyslexia settings
   dyslexiaFont.value = result.dyslexiaFont || 'opendyslexic';
   letterSpacing.value = result.letterSpacing || 1;
@@ -61,23 +60,26 @@ chrome.storage.sync.get([
   overlayColor.value = result.overlayColor || 'none';
   syllableHighlight.checked = result.syllableHighlight || false;
   bionicReading.checked = result.bionicReading || false;
-  
+
   // TTS settings
   ttsToggle.checked = result.ttsEnabled || false;
   ttsSpeed.value = result.ttsSpeed || 1;
   ttsPauseOnPunctuation.checked = result.ttsPauseOnPunctuation !== false;
   ttsWordHighlight.checked = result.ttsWordHighlight !== false;
-  
+
   // Update range value displays
   updateRangeValues();
-  
+
   // Show/hide options
   dyslexiaOptions.style.display = dyslexiaToggle.checked ? 'flex' : 'none';
   ttsOptions.style.display = ttsToggle.checked ? 'flex' : 'none';
+});
 
+// Load API key separately from LOCAL storage (privacy-first)
+chrome.storage.local.get(['apiKey'], (result) => {
   if (result.apiKey) {
     apiKeyInput.value = result.apiKey;
-    showApiStatus('API key configured', 'success');
+    showApiStatus('API key configured (local only)', 'success');
   }
 });
 
@@ -102,9 +104,9 @@ dyslexiaToggle.addEventListener('change', async (e) => {
   const enabled = e.target.checked;
   await chrome.storage.sync.set({ dyslexiaEnabled: enabled });
   dyslexiaOptions.style.display = enabled ? 'flex' : 'none';
-  
-  await sendMessageToActiveTab({ 
-    action: 'toggleDyslexia', 
+
+  await sendMessageToActiveTab({
+    action: 'toggleDyslexia',
     enabled,
     settings: getDyslexiaSettings()
   });
@@ -114,8 +116,8 @@ dyslexiaToggle.addEventListener('change', async (e) => {
 // Dyslexia font change
 dyslexiaFont.addEventListener('change', async (e) => {
   await chrome.storage.sync.set({ dyslexiaFont: e.target.value });
-  await sendMessageToActiveTab({ 
-    action: 'updateDyslexia', 
+  await sendMessageToActiveTab({
+    action: 'updateDyslexia',
     settings: getDyslexiaSettings()
   });
 });
@@ -127,8 +129,8 @@ letterSpacing.addEventListener('input', (e) => {
 
 letterSpacing.addEventListener('change', async (e) => {
   await chrome.storage.sync.set({ letterSpacing: parseFloat(e.target.value) });
-  await sendMessageToActiveTab({ 
-    action: 'updateDyslexia', 
+  await sendMessageToActiveTab({
+    action: 'updateDyslexia',
     settings: getDyslexiaSettings()
   });
 });
@@ -140,8 +142,8 @@ lineHeight.addEventListener('input', (e) => {
 
 lineHeight.addEventListener('change', async (e) => {
   await chrome.storage.sync.set({ lineHeight: parseFloat(e.target.value) });
-  await sendMessageToActiveTab({ 
-    action: 'updateDyslexia', 
+  await sendMessageToActiveTab({
+    action: 'updateDyslexia',
     settings: getDyslexiaSettings()
   });
 });
@@ -153,8 +155,8 @@ wordSpacing.addEventListener('input', (e) => {
 
 wordSpacing.addEventListener('change', async (e) => {
   await chrome.storage.sync.set({ wordSpacing: parseInt(e.target.value) });
-  await sendMessageToActiveTab({ 
-    action: 'updateDyslexia', 
+  await sendMessageToActiveTab({
+    action: 'updateDyslexia',
     settings: getDyslexiaSettings()
   });
 });
@@ -162,8 +164,8 @@ wordSpacing.addEventListener('change', async (e) => {
 // Overlay color
 overlayColor.addEventListener('change', async (e) => {
   await chrome.storage.sync.set({ overlayColor: e.target.value });
-  await sendMessageToActiveTab({ 
-    action: 'updateDyslexia', 
+  await sendMessageToActiveTab({
+    action: 'updateDyslexia',
     settings: getDyslexiaSettings()
   });
 });
@@ -171,8 +173,8 @@ overlayColor.addEventListener('change', async (e) => {
 // Syllable highlighting
 syllableHighlight.addEventListener('change', async (e) => {
   await chrome.storage.sync.set({ syllableHighlight: e.target.checked });
-  await sendMessageToActiveTab({ 
-    action: 'updateDyslexia', 
+  await sendMessageToActiveTab({
+    action: 'updateDyslexia',
     settings: getDyslexiaSettings()
   });
 });
@@ -180,8 +182,8 @@ syllableHighlight.addEventListener('change', async (e) => {
 // Bionic reading
 bionicReading.addEventListener('change', async (e) => {
   await chrome.storage.sync.set({ bionicReading: e.target.checked });
-  await sendMessageToActiveTab({ 
-    action: 'updateDyslexia', 
+  await sendMessageToActiveTab({
+    action: 'updateDyslexia',
     settings: getDyslexiaSettings()
   });
 });
@@ -191,9 +193,9 @@ ttsToggle.addEventListener('change', async (e) => {
   const enabled = e.target.checked;
   await chrome.storage.sync.set({ ttsEnabled: enabled });
   ttsOptions.style.display = enabled ? 'flex' : 'none';
-  
-  await sendMessageToActiveTab({ 
-    action: 'toggleTTS', 
+
+  await sendMessageToActiveTab({
+    action: 'toggleTTS',
     enabled,
     settings: getTTSSettings()
   });
@@ -218,8 +220,8 @@ ttsStop.addEventListener('click', async () => {
 // TTS Speed
 ttsSpeed.addEventListener('change', async (e) => {
   await chrome.storage.sync.set({ ttsSpeed: parseFloat(e.target.value) });
-  await sendMessageToActiveTab({ 
-    action: 'updateTTS', 
+  await sendMessageToActiveTab({
+    action: 'updateTTS',
     settings: getTTSSettings()
   });
 });
@@ -227,8 +229,8 @@ ttsSpeed.addEventListener('change', async (e) => {
 // TTS Pause on Punctuation
 ttsPauseOnPunctuation.addEventListener('change', async (e) => {
   await chrome.storage.sync.set({ ttsPauseOnPunctuation: e.target.checked });
-  await sendMessageToActiveTab({ 
-    action: 'updateTTS', 
+  await sendMessageToActiveTab({
+    action: 'updateTTS',
     settings: getTTSSettings()
   });
 });
@@ -236,8 +238,8 @@ ttsPauseOnPunctuation.addEventListener('change', async (e) => {
 // TTS Word Highlight
 ttsWordHighlight.addEventListener('change', async (e) => {
   await chrome.storage.sync.set({ ttsWordHighlight: e.target.checked });
-  await sendMessageToActiveTab({ 
-    action: 'updateTTS', 
+  await sendMessageToActiveTab({
+    action: 'updateTTS',
     settings: getTTSSettings()
   });
 });
@@ -276,9 +278,9 @@ saveKeyBtn.addEventListener('click', async () => {
     return;
   }
 
-  // Save to storage
-  await chrome.storage.sync.set({ apiKey });
-  showApiStatus('API key saved successfully!', 'success');
+  // Save to LOCAL storage (device-only, never syncs)
+  await chrome.storage.local.set({ apiKey });
+  showApiStatus('API key saved locally (device-only) ✓', 'success');
   updateMainStatus();
 
   // Test the API key
@@ -321,16 +323,16 @@ async function sendMessageToActiveTab(message) {
             target: { tabId: tab.id },
             files: ['content.js']
           });
-          
+
           // Inject content CSS
           await chrome.scripting.insertCSS({
             target: { tabId: tab.id },
             files: ['content.css']
           });
-          
+
           // Wait a bit for script to initialize
           await new Promise(resolve => setTimeout(resolve, 500));
-          
+
           // Try sending message again
           await chrome.tabs.sendMessage(tab.id, message);
           showApiStatus('Extension loaded successfully', 'success');
@@ -401,14 +403,14 @@ function getTTSSettings() {
 // Helper: Update range value displays
 function updateRangeValues() {
   const letterValue = parseFloat(letterSpacing.value);
-  letterSpacingValue.textContent = letterValue === 0 ? 'None' : 
-                                    letterValue < 2 ? 'Normal' : 
-                                    letterValue < 4 ? 'Wide' : 'Extra Wide';
-  
+  letterSpacingValue.textContent = letterValue === 0 ? 'None' :
+    letterValue < 2 ? 'Normal' :
+      letterValue < 4 ? 'Wide' : 'Extra Wide';
+
   lineHeightValue.textContent = lineHeight.value;
-  
+
   const wordValue = parseInt(wordSpacing.value);
-  wordSpacingValue.textContent = wordValue === 0 ? 'None' : 
-                                  wordValue < 4 ? 'Normal' : 
-                                  wordValue < 7 ? 'Wide' : 'Extra Wide';
+  wordSpacingValue.textContent = wordValue === 0 ? 'None' :
+    wordValue < 4 ? 'Normal' :
+      wordValue < 7 ? 'Wide' : 'Extra Wide';
 }

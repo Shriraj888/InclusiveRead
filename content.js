@@ -40,7 +40,7 @@ let state = {
 init();
 
 async function init() {
-    // Load settings
+    // Load settings from sync storage
     const settings = await chrome.storage.sync.get([
         'jargonEnabled',
         'sensoryEnabled',
@@ -55,9 +55,12 @@ async function init() {
         'ttsEnabled',
         'ttsSpeed',
         'ttsPauseOnPunctuation',
-        'ttsWordHighlight',
-        'apiKey'
+        'ttsWordHighlight'
     ]);
+
+    // Load API key from LOCAL storage (device-only, privacy-first)
+    const { apiKey } = await chrome.storage.local.get('apiKey');
+    settings.apiKey = apiKey;
 
     Object.assign(state, settings);
 
@@ -339,8 +342,8 @@ async function decodeSelectedText(selectedText, range) {
     state.abortController = new AbortController();
     state.isGenerating = true;
 
-    // Get API key
-    const { apiKey } = await chrome.storage.sync.get('apiKey');
+    // Get API key from LOCAL storage
+    const { apiKey } = await chrome.storage.local.get('apiKey');
     if (!apiKey) {
         hideProgressLoader();
         state.isGenerating = false;
@@ -415,8 +418,8 @@ async function simplifySelectedText(selectedText, range) {
     state.abortController = new AbortController();
     state.isGenerating = true;
 
-    // Get API key
-    const { apiKey } = await chrome.storage.sync.get('apiKey');
+    // Get API key from LOCAL storage
+    const { apiKey } = await chrome.storage.local.get('apiKey');
     if (!apiKey) {
         hideProgressLoader();
         state.isGenerating = false;
@@ -1488,8 +1491,8 @@ async function activateJargonDecoder() {
     state.abortController = new AbortController();
     state.isGenerating = true;
 
-    // Get API key
-    const { apiKey } = await chrome.storage.sync.get('apiKey');
+    // Get API key from LOCAL storage
+    const { apiKey } = await chrome.storage.local.get('apiKey');
     if (!apiKey) {
         console.warn('InclusiveRead: No API key configured');
         hideProgressLoader();
