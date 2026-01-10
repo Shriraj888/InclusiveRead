@@ -18,7 +18,7 @@ let state = {
         lineHeight: 1.6,
         wordSpacing: 3,
         overlayColor: 'none',
-        syllableHighlight: false,
+
         bionicReading: false
     },
     ttsSettings: {
@@ -50,7 +50,7 @@ async function init() {
         'lineHeight',
         'wordSpacing',
         'overlayColor',
-        'syllableHighlight',
+
         'bionicReading',
         'ttsEnabled',
         'ttsSpeed',
@@ -74,7 +74,7 @@ async function init() {
             lineHeight: settings.lineHeight || 1.6,
             wordSpacing: settings.wordSpacing || 3,
             overlayColor: settings.overlayColor || 'none',
-            syllableHighlight: settings.syllableHighlight || false,
+
             bionicReading: settings.bionicReading || false
         };
     }
@@ -2330,8 +2330,7 @@ function deactivateDyslexiaMode() {
     removeCSS('ir-dyslexia-overlay');
     removeCSS('ir-opendyslexic-font');
 
-    // Remove bionic reading and syllable highlighting
-    document.querySelectorAll('.ir-bionic-word, .ir-syllable-word').forEach(el => {
+    document.querySelectorAll('.ir-bionic-word').forEach(el => {
         el.replaceWith(el.textContent);
     });
 
@@ -2480,15 +2479,6 @@ function applyDyslexiaStyles(settings) {
         injectCSS(overlayStyle, 'ir-dyslexia-overlay');
     }
 
-    // Syllable highlighting - DISABLED due to Chrome crashes
-    // This feature causes performance issues and crashes on large pages
-    // TODO: Implement more efficient algorithm if needed
-    if (settings.syllableHighlight) {
-        console.warn('Syllable highlighting is temporarily disabled due to performance issues');
-        // showNotification('Syllable highlighting is temporarily disabled', 'info');
-    }
-    removeSyllableHighlighting();
-
     // Apply bionic reading
     if (settings.bionicReading) {
         applyBionicReading();
@@ -2497,50 +2487,7 @@ function applyDyslexiaStyles(settings) {
     }
 }
 
-function applySyllableHighlighting() {
-    // Simple syllable detection (alternating colors)
-    const textNodes = getTextNodes(document.body);
 
-    textNodes.forEach(node => {
-        // Skip if already processed or in special elements
-        if (node.parentElement?.classList.contains('ir-syllable-word') ||
-            node.parentElement?.closest('.ir-jargon, .ir-selection-toolbar, script, style, code, pre')) {
-            return;
-        }
-
-        const text = node.textContent;
-        const words = text.split(/(\s+)/);
-
-        if (words.length > 1) {
-            const span = document.createElement('span');
-            span.className = 'ir-syllable-word';
-
-            words.forEach((word, index) => {
-                const wordSpan = document.createElement('span');
-                wordSpan.textContent = word;
-
-                // Alternate colors for syllables (simplified - just alternating words)
-                if (!word.trim()) {
-                    wordSpan.textContent = word;
-                } else if (index % 2 === 0) {
-                    wordSpan.style.color = 'inherit';
-                } else {
-                    wordSpan.style.opacity = '0.7';
-                }
-
-                span.appendChild(wordSpan);
-            });
-
-            node.replaceWith(span);
-        }
-    });
-}
-
-function removeSyllableHighlighting() {
-    document.querySelectorAll('.ir-syllable-word').forEach(el => {
-        el.replaceWith(el.textContent);
-    });
-}
 
 function applyBionicReading() {
     const textNodes = getTextNodes(document.body);

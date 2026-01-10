@@ -47,7 +47,7 @@ async function detectJargonHandler(pageText, apiKey, abortSignal) {
         if (abortSignal) {
             return { success: false, error: 'Request aborted', aborted: true };
         }
-        
+
         const result = await detectJargon(pageText, apiKey);
         return { success: true, data: result };
     } catch (error) {
@@ -67,7 +67,7 @@ async function simplifyTextHandler(text, apiKey, abortSignal) {
         if (abortSignal) {
             return { success: false, error: 'Request aborted', aborted: true };
         }
-        
+
         const result = await simplifyText(text, apiKey);
         return { success: true, data: result };
     } catch (error) {
@@ -93,7 +93,7 @@ chrome.runtime.onInstalled.addListener((details) => {
             lineHeight: 1.6,
             wordSpacing: 3,
             overlayColor: 'none',
-            syllableHighlight: false,
+
             bionicReading: false,
             ttsEnabled: false,
             ttsSpeed: 1,

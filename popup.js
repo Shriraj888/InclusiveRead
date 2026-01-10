@@ -13,7 +13,7 @@ const lineHeightValue = document.getElementById('lineHeightValue');
 const wordSpacing = document.getElementById('wordSpacing');
 const wordSpacingValue = document.getElementById('wordSpacingValue');
 const overlayColor = document.getElementById('overlayColor');
-const syllableHighlight = document.getElementById('syllableHighlight');
+
 const bionicReading = document.getElementById('bionicReading');
 const ttsToggle = document.getElementById('ttsToggle');
 const ttsOptions = document.getElementById('ttsOptions');
@@ -53,7 +53,7 @@ chrome.storage.sync.get([
   'lineHeight',
   'wordSpacing',
   'overlayColor',
-  'syllableHighlight',
+
   'bionicReading',
   'ttsEnabled',
   'ttsSpeed',
@@ -75,7 +75,6 @@ chrome.storage.sync.get([
   lineHeight.value = result.lineHeight || 1.6;
   wordSpacing.value = result.wordSpacing || 3;
   overlayColor.value = result.overlayColor || 'none';
-  syllableHighlight.checked = result.syllableHighlight || false;
   bionicReading.checked = result.bionicReading || false;
 
   // TTS settings
@@ -216,14 +215,7 @@ overlayColor.addEventListener('change', async (e) => {
   });
 });
 
-// Syllable highlighting
-syllableHighlight.addEventListener('change', async (e) => {
-  await chrome.storage.sync.set({ syllableHighlight: e.target.checked });
-  await sendMessageToActiveTab({
-    action: 'updateDyslexia',
-    settings: getDyslexiaSettings()
-  });
-});
+
 
 // Bionic reading
 bionicReading.addEventListener('change', async (e) => {
@@ -450,7 +442,6 @@ function getDyslexiaSettings() {
     lineHeight: parseFloat(lineHeight.value),
     wordSpacing: parseInt(wordSpacing.value),
     overlayColor: overlayColor.value,
-    syllableHighlight: syllableHighlight.checked,
     bionicReading: bionicReading.checked
   };
 }
