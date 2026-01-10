@@ -287,10 +287,7 @@ ttsVolume.addEventListener('input', (e) => {
 ttsVolume.addEventListener('change', async (e) => {
   const volume = parseInt(e.target.value);
   await chrome.storage.sync.set({ ttsVolume: volume });
-  await sendMessageToActiveTab({
-    action: 'updateTTS',
-    settings: getTTSSettings()
-  });
+  // Volume applies to next playback - don't interrupt current TTS
 });
 
 // Settings panel toggle
