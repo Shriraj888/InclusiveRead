@@ -570,20 +570,6 @@ ttsVoiceSelect.addEventListener('change', async (e) => {
   });
 });
 
-// Helper: Update Provider UI
-function updateProviderUI(provider) {
-  const openrouterSection = document.getElementById('openrouterSection');
-  const geminiSection = document.getElementById('geminiSection');
-
-  if (provider === 'gemini') {
-    openrouterSection.style.display = 'none';
-    geminiSection.style.display = 'block';
-  } else {
-    openrouterSection.style.display = 'block';
-    geminiSection.style.display = 'none';
-  }
-}
-
 // Helper: Populate TTS Voices
 function populateTTSVoices(selectedVoice) {
   // Get available voices

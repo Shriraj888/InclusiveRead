@@ -3170,6 +3170,8 @@ function stopTTS() {
     state.ttsState.currentWordIndex = 0;
     state.ttsState.words = [];
     state.ttsState.textContent = '';
+    state.ttsState.chunks = [];
+    state.ttsState.currentChunkIndex = 0;
 
     clearTTSHighlight();
     showNotification('Speech stopped', 'info');
