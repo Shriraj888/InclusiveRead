@@ -272,11 +272,19 @@ RESPOND with valid JSON only (no markdown):
 }
 
 /**
- * Test API key validity
+ * Test API key validity for the specified provider
+ * @param {string} apiKey - The API key to test
+ * @param {string} provider - The provider to test ('openrouter' or 'gemini')
  */
-async function testApiKey(apiKey) {
+async function testApiKey(apiKey, provider = 'openrouter') {
     try {
-        await callOpenRouter([{ role: 'user', content: 'Say hello' }], apiKey);
+        const testMessage = [{ role: 'user', content: 'Say hello' }];
+
+        if (provider === 'gemini') {
+            await callGemini(testMessage, apiKey);
+        } else {
+            await callOpenRouter(testMessage, apiKey);
+        }
         return { success: true };
     } catch (error) {
         return { success: false, error: error.message };

@@ -111,10 +111,7 @@ async function init() {
     if (state.jargonEnabled) {
         await activateJargonDecoder();
     }
-
-    if (state.sensoryEnabled) {
-        activateSensoryShield();
-    }
+    // Note: sensoryEnabled is already activated above, no duplicate call needed
 
     // Initialize selection decoder (always available)
     initSelectionDecoder();
@@ -1433,71 +1430,8 @@ function injectSelectionDecoderStyles() {
     injectCSS(css, 'ir-selection-decoder-styles');
 }
 
-async function handleMessage(request) {
-    switch (request.action) {
-        case 'toggleJargon':
-            state.jargonEnabled = request.enabled;
-            if (request.enabled) {
-                await activateJargonDecoder();
-            } else {
-                deactivateJargonDecoder();
-            }
-            break;
-
-        case 'toggleSensory':
-            state.sensoryEnabled = request.enabled;
-            if (request.enabled) {
-                activateSensoryShield();
-            } else {
-                deactivateSensoryShield();
-            }
-            break;
-
-        case 'toggleDyslexia':
-            state.dyslexiaEnabled = request.enabled;
-            if (request.enabled) {
-                activateDyslexiaMode(request.settings);
-            } else {
-                deactivateDyslexiaMode();
-            }
-            break;
-
-        case 'updateDyslexia':
-            if (state.dyslexiaEnabled) {
-                updateDyslexiaSettings(request.settings);
-            }
-            break;
-
-        case 'toggleTTS':
-            state.ttsEnabled = request.enabled;
-            if (request.enabled) {
-                activateTTSMode(request.settings);
-            } else {
-                deactivateTTSMode();
-            }
-            break;
-
-        case 'updateTTS':
-            if (state.ttsEnabled) {
-                updateTTSSettings(request.settings);
-            }
-            break;
-
-        case 'ttsPlay':
-            playTTS();
-            break;
-
-        case 'ttsPause':
-            pauseTTS();
-            break;
-
-        case 'ttsStop':
-            stopTTS();
-            break;
-    }
-
-    return { success: true };
-}
+// Note: handleMessage function is defined earlier in the file (around line 137)
+// This comment replaces a duplicate definition that was removed to fix a bug
 
 /**
  * FEATURE 1: Jargon Decoder (Enhanced)
@@ -1821,12 +1755,21 @@ function applyJargonReplacement({ jargon, simple, explanation, category, difficu
 }
 
 /**
- * Escape HTML special characters
+ * Escape HTML special characters for XSS protection
+ * @param {string} str - The string to escape
+ * @returns {string} - The escaped string safe for HTML insertion
  */
 function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    if (typeof str !== 'string') {
+        return '';
+    }
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/`/g, '&#96;');
 }
 
 /**

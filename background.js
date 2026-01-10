@@ -13,7 +13,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 async function handleMessage(request, sender) {
     switch (request.action) {
         case 'testApiKey':
-            return await testApiKeyHandler(request.apiKey);
+            return await testApiKeyHandler(request.apiKey, request.provider);
 
         case 'detectJargon':
             return await detectJargonHandler(request.pageText, request.apiKey, request.abortSignal);
@@ -29,9 +29,9 @@ async function handleMessage(request, sender) {
 /**
  * Test API key validity
  */
-async function testApiKeyHandler(apiKey) {
+async function testApiKeyHandler(apiKey, provider) {
     try {
-        const result = await testApiKey(apiKey);
+        const result = await testApiKey(apiKey, provider);
         return result;
     } catch (error) {
         return { success: false, error: error.message };

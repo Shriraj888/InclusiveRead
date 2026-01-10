@@ -335,24 +335,22 @@ saveKeyBtn.addEventListener('click', async () => {
   showApiStatus(`${provider === 'gemini' ? 'Gemini' : 'OpenRouter'} API key saved locally (device-only) ✓`, 'success');
   updateMainStatus();
 
-  // Test the API key (only for OpenRouter for now)
-  if (provider === 'openrouter') {
-    try {
-      const response = await chrome.runtime.sendMessage({
-        action: 'testApiKey',
-        apiKey: key
-      });
+  // Test the API key with the appropriate provider
+  try {
+    showApiStatus('Validating API key...', 'info');
+    const response = await chrome.runtime.sendMessage({
+      action: 'testApiKey',
+      apiKey: key,
+      provider: provider
+    });
 
-      if (response.success) {
-        showApiStatus('API key validated successfully', 'success');
-      } else {
-        showApiStatus(`API key error: ${response.error}`, 'error');
-      }
-    } catch (error) {
-      showApiStatus('Could not validate API key', 'error');
+    if (response.success) {
+      showApiStatus(`${provider === 'gemini' ? 'Gemini' : 'OpenRouter'} API key validated successfully`, 'success');
+    } else {
+      showApiStatus(`API key error: ${response.error}`, 'error');
     }
-  } else {
-    showApiStatus('Gemini API key saved successfully', 'success');
+  } catch (error) {
+    showApiStatus('Could not validate API key', 'error');
   }
 });
 
@@ -408,6 +406,8 @@ async function sendMessageToActiveTab(message) {
 
 // Helper: Show API status message
 function showApiStatus(message, type) {
+  // Always reset display to ensure visibility
+  apiStatus.style.display = 'block';
   apiStatus.textContent = message;
   apiStatus.className = `status-message ${type}`;
 
