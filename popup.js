@@ -36,6 +36,7 @@ const apiProvider = document.getElementById('apiProvider');
 const geminiKeyInput = document.getElementById('geminiKey');
 const toggleGeminiKeyBtn = document.getElementById('toggleGeminiKey');
 const ttsVoiceSelect = document.getElementById('ttsVoice');
+const apiProviderBadge = document.getElementById('apiProviderBadge');
 
 // Theme & Size Controls
 const themeToggle = document.getElementById('themeToggle');
@@ -86,10 +87,21 @@ chrome.storage.sync.get([
   ttsVolumeValue.textContent = (result.ttsVolume !== undefined ? result.ttsVolume : 70) + '%';
 
   // API Provider
-  apiProvider.value = result.apiProvider || 'openrouter';
-  updateProviderUI(result.apiProvider || 'openrouter');
+  const selectedProvider = result.apiProvider || 'openrouter';
+  apiProvider.value = selectedProvider;
 
-  // Update range value displays
+  // Update badge directly
+  if (apiProviderBadge) {
+    apiProviderBadge.textContent = selectedProvider === 'gemini' ? 'Gemini' : 'OpenRouter';
+    apiProviderBadge.className = 'api-provider-badge ' + selectedProvider;
+  }
+
+  // Show/hide correct key sections
+  const openrouterSection = document.getElementById('openrouterSection');
+  const geminiSection = document.getElementById('geminiSection');
+  if (openrouterSection) openrouterSection.style.display = selectedProvider === 'openrouter' ? 'block' : 'none';
+  if (geminiSection) geminiSection.style.display = selectedProvider === 'gemini' ? 'block' : 'none';
+
   updateRangeValues();
 
   // Show/hide options
@@ -524,6 +536,26 @@ apiProvider.addEventListener('change', async (e) => {
   await chrome.storage.sync.set({ apiProvider: provider });
   updateProviderUI(provider);
 });
+
+// Update provider badge and key fields
+function updateProviderUI(provider) {
+  // Update badge
+  if (apiProviderBadge) {
+    apiProviderBadge.textContent = provider === 'gemini' ? 'Gemini' : 'OpenRouter';
+    apiProviderBadge.className = 'api-provider-badge ' + provider;
+  }
+
+  // Show/hide correct key field sections
+  const openrouterSection = document.getElementById('openrouterSection');
+  const geminiSection = document.getElementById('geminiSection');
+
+  if (openrouterSection) {
+    openrouterSection.style.display = provider === 'openrouter' ? 'block' : 'none';
+  }
+  if (geminiSection) {
+    geminiSection.style.display = provider === 'gemini' ? 'block' : 'none';
+  }
+}
 
 // Toggle Gemini Key Visibility
 toggleGeminiKeyBtn.addEventListener('click', () => {

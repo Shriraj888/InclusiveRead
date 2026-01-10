@@ -1,7 +1,46 @@
-// Gemini Service - Renamed to handle OpenRouter API (Gemma 27B)
+// API Service - Supports both OpenRouter and Google Gemini
 
 const OPENROUTER_API_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
-const MODEL_NAME = 'google/gemma-3-27b-it:free';
+const GEMINI_API_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemma-3-27b-it:generateContent';
+const OPENROUTER_MODEL = 'google/gemma-3-27b-it:free';
+
+/**
+ * Get current API provider and key from storage
+ */
+async function getApiConfig() {
+    const sync = await chrome.storage.sync.get(['apiProvider']);
+    const local = await chrome.storage.local.get(['apiKey', 'geminiKey']);
+
+    const provider = sync.apiProvider || 'openrouter';
+    const apiKey = provider === 'gemini' ? local.geminiKey : local.apiKey;
+
+    return { provider, apiKey };
+}
+
+/**
+ * Unified API caller - routes to correct provider
+ */
+async function callAPI(messages, apiKeyOverride = null) {
+    const config = await getApiConfig();
+
+    // Only use override if it matches the current provider type
+    // This prevents OpenRouter key from being used for Gemini and vice versa
+    let apiKey = config.apiKey;
+    if (apiKeyOverride && config.provider === 'openrouter') {
+        // Only use override for OpenRouter (legacy support)
+        apiKey = apiKeyOverride;
+    }
+
+    if (!apiKey) {
+        throw new Error('No API key configured for ' + config.provider);
+    }
+
+    if (config.provider === 'gemini') {
+        return await callGemini(messages, apiKey);
+    } else {
+        return await callOpenRouter(messages, apiKey);
+    }
+}
 
 /**
  * Helper to call OpenRouter API
@@ -13,18 +52,18 @@ async function callOpenRouter(messages, apiKey) {
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${apiKey}`,
-                'HTTP-Referer': 'https://github.com/InclusiveRead', // Best practice for OpenRouter
+                'HTTP-Referer': 'https://github.com/InclusiveRead',
                 'X-Title': 'InclusiveRead Extension'
             },
             body: JSON.stringify({
-                model: MODEL_NAME,
+                model: OPENROUTER_MODEL,
                 messages: messages
             })
         });
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
-            console.error('API validation error:', errorData);
+            console.error('OpenRouter API error:', errorData);
             throw new Error(errorData.error?.message || `HTTP ${response.status}`);
         }
 
@@ -37,17 +76,56 @@ async function callOpenRouter(messages, apiKey) {
 }
 
 /**
+ * Helper to call Google Gemini API
+ */
+async function callGemini(messages, apiKey) {
+    try {
+        // Convert OpenAI-style messages to Gemini format
+        const contents = messages.map(msg => ({
+            role: msg.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: msg.content }]
+        }));
+
+        const response = await fetch(`${GEMINI_API_ENDPOINT}?key=${apiKey}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                contents: contents,
+                generationConfig: {
+                    temperature: 0.7,
+                    maxOutputTokens: 2048
+                }
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            console.error('Gemini API error:', errorData);
+            throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    } catch (error) {
+        console.error('Gemini API error:', error);
+        throw error;
+    }
+}
+
+/**
  * Detect and simplify jargon - Enhanced version
  */
 async function detectJargon(pageText, apiKey, options = {}) {
     const { category = 'all', contextHints = [] } = options;
-    
+
     // Pre-process text to extract meaningful content
     const cleanText = pageText
         .replace(/\s+/g, ' ')
         .replace(/[^\w\s.,;:'"()-]/g, '')
         .trim();
-    
+
     const prompt = `You are an expert accessibility assistant helping neurodivergent users understand complex terminology.
 
 CONTEXT: Analyze this webpage content and identify terms that may be difficult to understand.
@@ -93,7 +171,8 @@ RESPOND with valid JSON array only (no markdown):
 Return up to 15 terms, sorted by importance. If no complex terms found, return empty array [].`;
 
     try {
-        const text = await callOpenRouter([{ role: 'user', content: prompt }], apiKey);
+        // Use unified API caller (routes to OpenRouter or Gemini based on settings)
+        const text = await callAPI([{ role: 'user', content: prompt }], apiKey);
 
         // Extract JSON from response
         const jsonMatch = text.match(/\[[\s\S]*?\]/);
@@ -101,13 +180,13 @@ Return up to 15 terms, sorted by importance. If no complex terms found, return e
             console.warn('No valid JSON array in jargon response');
             return [];
         }
-        
+
         let result = JSON.parse(jsonMatch[0]);
-        
+
         // Validate and clean results
-        result = result.filter(item => 
-            item.jargon && 
-            item.simple && 
+        result = result.filter(item =>
+            item.jargon &&
+            item.simple &&
             item.jargon.length >= 3 &&
             item.jargon.length <= 50
         ).map(item => ({
@@ -135,7 +214,7 @@ async function simplifyText(text, apiKey) {
     const cleanText = text
         .replace(/\s+/g, ' ')
         .trim();
-    
+
     const prompt = `You are a plain language expert helping neurodivergent users understand complex text.
 
 ORIGINAL TEXT:
@@ -165,21 +244,22 @@ RESPOND with valid JSON only (no markdown):
 }`;
 
     try {
-        const response = await callOpenRouter([{ role: 'user', content: prompt }], apiKey);
-        
+        // Use unified API caller (routes to OpenRouter or Gemini based on settings)
+        const response = await callAPI([{ role: 'user', content: prompt }], apiKey);
+
         // Extract JSON from response
         const jsonMatch = response.match(/\{[\s\S]*\}/);
         if (!jsonMatch) {
             console.warn('No valid JSON in simplify response');
             return null;
         }
-        
+
         const result = JSON.parse(jsonMatch[0]);
-        
+
         if (!result.simplified) {
             return null;
         }
-        
+
         return {
             simplified: result.simplified.trim(),
             readingLevel: result.readingLevel || 'Unknown',

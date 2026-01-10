@@ -899,3 +899,24 @@ select,
 .slider {
   transition: all var(--transition);
 }
+
+/* API Provider Badge */
+.api-provider-badge {
+  background: var(--accent-color);
+  color: var(--bg-primary);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  margin-left: 8px;
+  cursor: default;
+}
+
+.api-provider-badge.gemini {
+  background: linear-gradient(135deg, #4285f4, #34a853);
+}
+
+.api-provider-badge.openrouter {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+}
