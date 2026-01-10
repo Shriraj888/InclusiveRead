@@ -3070,18 +3070,23 @@ function playTTSSelection() {
     };
 
     utterance.onerror = (event) => {
-        console.error('TTS Error:', event.error, event);
+        console.log('TTS Event:', event.error);
+
+        // Clean up state
         state.ttsState.isPlaying = false;
         state.ttsState.isPaused = false;
         state.ttsState.currentUtterance = null;
         clearTTSHighlight();
 
+        // Don't show error notifications for expected interruptions
+        if (event.error === 'canceled' || event.error === 'interrupted') {
+            // These are expected when user stops TTS, don't show error
+            return;
+        }
+
+        // Show error for unexpected issues
         let errorMsg = 'Speech synthesis error';
-        if (event.error === 'canceled') {
-            errorMsg = 'Speech was stopped';
-        } else if (event.error === 'interrupted') {
-            errorMsg = 'Speech was interrupted';
-        } else if (event.error === 'audio-busy') {
+        if (event.error === 'audio-busy') {
             errorMsg = 'Audio is busy, try again';
         } else if (event.error === 'not-allowed') {
             errorMsg = 'Speech not allowed - check browser permissions';
@@ -3115,12 +3120,20 @@ function pauseTTS() {
 function stopTTS() {
     if (ttsEngine) {
         try {
+            // Cancel all pending utterances
             ttsEngine.cancel();
+
+            // Force reset the speech synthesis to clear any stuck state
+            // This is a workaround for browsers that leave TTS in bad state after cancel
+            if (ttsEngine.speaking || ttsEngine.pending) {
+                ttsEngine.cancel();
+            }
         } catch (error) {
             console.error('Error canceling TTS:', error);
         }
     }
 
+    // Clean up all state
     state.ttsState.isPlaying = false;
     state.ttsState.isPaused = false;
     state.ttsState.currentUtterance = null;
