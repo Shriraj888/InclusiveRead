@@ -3050,14 +3050,48 @@ function playTTSSelection() {
     // Ensure valid rate (0.1 to 10)
     utterance.rate = Math.max(0.1, Math.min(10, state.ttsSettings.speed || 1));
     utterance.pitch = 1;
-    utterance.volume = 1;
+    utterance.volume = Math.max(0, Math.min(1, state.ttsSettings.volume || 0.7)); // Use volume from settings
     utterance.lang = 'en-US';
 
-    // Get available voices and set a voice
+    // Get available voices and select voice (same logic as playTTS)
     const voices = ttsEngine.getVoices();
     if (voices.length > 0) {
-        const englishVoice = voices.find(voice => voice.lang.startsWith('en')) || voices[0];
-        utterance.voice = englishVoice;
+        let selectedVoice = null;
+
+        // Priority 1: Use user-selected voice if set
+        if (state.ttsSettings.voice && state.ttsSettings.voice !== 'auto') {
+            selectedVoice = voices.find(v => v.name === state.ttsSettings.voice);
+            if (selectedVoice) {
+                console.log('TTS Selection: Using user-selected voice:', selectedVoice.name);
+            }
+        }
+
+        // Priority 2: Auto-select best quality voice if no voice selected or voice not found
+        if (!selectedVoice) {
+            const englishVoices = voices.filter(voice => voice.lang.startsWith('en'));
+
+            // Try to find a high-quality neural/natural voice
+            const premiumVoice = englishVoices.find(voice =>
+                voice.name.toLowerCase().includes('neural') ||
+                voice.name.toLowerCase().includes('natural') ||
+                voice.name.toLowerCase().includes('premium') ||
+                voice.name.toLowerCase().includes('enhanced') ||
+                voice.name.toLowerCase().includes('studio') ||
+                (voice.name.includes('Google') && voice.lang === 'en-US')
+            );
+
+            if (premiumVoice) {
+                selectedVoice = premiumVoice;
+            } else {
+                const enUSVoice = englishVoices.find(voice => voice.lang === 'en-US');
+                selectedVoice = enUSVoice || englishVoices[0] || voices[0];
+            }
+            console.log('TTS Selection: Auto-selected voice:', selectedVoice?.name);
+        }
+
+        if (selectedVoice) {
+            utterance.voice = selectedVoice;
+        }
     }
 
     // Word boundary event for highlighting
