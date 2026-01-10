@@ -55,7 +55,9 @@ async function init() {
         'ttsEnabled',
         'ttsSpeed',
         'ttsPauseOnPunctuation',
-        'ttsWordHighlight'
+        'ttsWordHighlight',
+        'ttsVolume',
+        'ttsVoice'
     ]);
 
     // Load API key from LOCAL storage (device-only, privacy-first)
@@ -82,7 +84,9 @@ async function init() {
         state.ttsSettings = {
             speed: settings.ttsSpeed || 1,
             pauseOnPunctuation: settings.ttsPauseOnPunctuation !== false,
-            wordHighlight: settings.ttsWordHighlight !== false
+            wordHighlight: settings.ttsWordHighlight !== false,
+            volume: settings.ttsVolume !== undefined ? settings.ttsVolume / 100 : 0.7,
+            voice: settings.ttsVoice || 'auto'
         };
     }
 
@@ -2894,46 +2898,52 @@ function playTTS() {
     // Ensure valid rate (0.1 to 10)
     utterance.rate = Math.max(0.1, Math.min(10, state.ttsSettings.speed || 1));
     utterance.pitch = 1;
-    utterance.volume = 1;
+    utterance.volume = Math.max(0, Math.min(1, state.ttsSettings.volume || 0.7)); // Use volume from settings, default 70%
 
     // Set language
     utterance.lang = 'en-US';
 
-    // Get available voices and select the best quality voice
+    // Get available voices and select voice
     const voices = ttsEngine.getVoices();
     if (voices.length > 0) {
-        // Filter for English voices
-        const englishVoices = voices.filter(voice => voice.lang.startsWith('en'));
-
         let selectedVoice = null;
 
-        // Priority 1: Try to find a high-quality neural/natural voice (Google, Microsoft, etc.)
-        // These are usually marked with keywords like "Neural", "Natural", "Premium", "Enhanced"
-        const premiumVoice = englishVoices.find(voice =>
-            voice.name.toLowerCase().includes('neural') ||
-            voice.name.toLowerCase().includes('natural') ||
-            voice.name.toLowerCase().includes('premium') ||
-            voice.name.toLowerCase().includes('enhanced') ||
-            voice.name.toLowerCase().includes('studio') ||
-            (voice.name.includes('Google') && voice.lang === 'en-US')
-        );
-
-        if (premiumVoice) {
-            selectedVoice = premiumVoice;
-        } else {
-            // Priority 2: Try to find any en-US voice (best match for language)
-            const enUSVoice = englishVoices.find(voice => voice.lang === 'en-US');
-
-            if (enUSVoice) {
-                selectedVoice = enUSVoice;
-            } else {
-                // Priority 3: Use any English voice, or first available voice
-                selectedVoice = englishVoices[0] || voices[0];
+        // Priority 1: Use user-selected voice if set
+        if (state.ttsSettings.voice && state.ttsSettings.voice !== 'auto') {
+            selectedVoice = voices.find(v => v.name === state.ttsSettings.voice);
+            if (selectedVoice) {
+                console.log('TTS: Using user-selected voice:', selectedVoice.name);
             }
         }
 
-        utterance.voice = selectedVoice;
-        console.log('TTS: Using voice:', selectedVoice.name, selectedVoice.lang);
+        // Priority 2: Auto-select best quality voice if no voice selected or voice not found
+        if (!selectedVoice) {
+            // Filter for English voices
+            const englishVoices = voices.filter(voice => voice.lang.startsWith('en'));
+
+            // Try to find a high-quality neural/natural voice
+            const premiumVoice = englishVoices.find(voice =>
+                voice.name.toLowerCase().includes('neural') ||
+                voice.name.toLowerCase().includes('natural') ||
+                voice.name.toLowerCase().includes('premium') ||
+                voice.name.toLowerCase().includes('enhanced') ||
+                voice.name.toLowerCase().includes('studio') ||
+                (voice.name.includes('Google') && voice.lang === 'en-US')
+            );
+
+            if (premiumVoice) {
+                selectedVoice = premiumVoice;
+            } else {
+                // Try to find any en-US voice
+                const enUSVoice = englishVoices.find(voice => voice.lang === 'en-US');
+                selectedVoice = enUSVoice || englishVoices[0] || voices[0];
+            }
+            console.log('TTS: Auto-selected voice:', selectedVoice?.name);
+        }
+
+        if (selectedVoice) {
+            utterance.voice = selectedVoice;
+        }
     }
 
     // Word boundary event for highlighting

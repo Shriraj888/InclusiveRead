@@ -23,6 +23,8 @@ const ttsStop = document.getElementById('ttsStop');
 const ttsSpeed = document.getElementById('ttsSpeed');
 const ttsPauseOnPunctuation = document.getElementById('ttsPauseOnPunctuation');
 const ttsWordHighlight = document.getElementById('ttsWordHighlight');
+const ttsVolume = document.getElementById('ttsVolume');
+const ttsVolumeValue = document.getElementById('ttsVolumeValue');
 const settingsBtn = document.getElementById('settingsBtn');
 const settingsPanel = document.getElementById('settingsPanel');
 const apiKeyInput = document.getElementById('apiKey');
@@ -56,6 +58,7 @@ chrome.storage.sync.get([
   'ttsSpeed',
   'ttsPauseOnPunctuation',
   'ttsWordHighlight',
+  'ttsVolume',
   'theme',
   'popupSize',
   'apiProvider',
@@ -79,6 +82,8 @@ chrome.storage.sync.get([
   ttsSpeed.value = result.ttsSpeed || 1;
   ttsPauseOnPunctuation.checked = result.ttsPauseOnPunctuation !== false;
   ttsWordHighlight.checked = result.ttsWordHighlight !== false;
+  ttsVolume.value = result.ttsVolume !== undefined ? result.ttsVolume : 70;
+  ttsVolumeValue.textContent = (result.ttsVolume !== undefined ? result.ttsVolume : 70) + '%';
 
   // API Provider
   apiProvider.value = result.apiProvider || 'openrouter';
@@ -273,6 +278,21 @@ ttsWordHighlight.addEventListener('change', async (e) => {
   });
 });
 
+// TTS Volume
+ttsVolume.addEventListener('input', (e) => {
+  const volume = parseInt(e.target.value);
+  ttsVolumeValue.textContent = volume + '%';
+});
+
+ttsVolume.addEventListener('change', async (e) => {
+  const volume = parseInt(e.target.value);
+  await chrome.storage.sync.set({ ttsVolume: volume });
+  await sendMessageToActiveTab({
+    action: 'updateTTS',
+    settings: getTTSSettings()
+  });
+});
+
 // Settings panel toggle
 settingsBtn.addEventListener('click', () => {
   const isOpen = settingsPanel.style.display === 'block';
@@ -431,7 +451,9 @@ function getTTSSettings() {
   return {
     speed: parseFloat(ttsSpeed.value),
     pauseOnPunctuation: ttsPauseOnPunctuation.checked,
-    wordHighlight: ttsWordHighlight.checked
+    wordHighlight: ttsWordHighlight.checked,
+    volume: parseInt(ttsVolume.value),
+    voice: ttsVoiceSelect.value
   };
 }
 
