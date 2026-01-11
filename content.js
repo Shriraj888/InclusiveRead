@@ -206,9 +206,32 @@ async function handleMessage(request) {
 }
 
 /**
+ * Get available API configuration with automatic fallback
+ * Returns the API key from the selected provider, or falls back to the other provider if available
+ */
+async function getAvailableApiConfig() {
+    const { apiProvider } = await chrome.storage.sync.get('apiProvider');
+    const preferredProvider = apiProvider || 'openrouter';
+    const localKeys = await chrome.storage.local.get(['apiKey', 'geminiKey']);
+
+    // Try preferred provider first
+    let provider = preferredProvider;
+    let apiKey = provider === 'gemini' ? localKeys.geminiKey : localKeys.apiKey;
+
+    // Fallback to other provider if preferred one has no key
+    if (!apiKey) {
+        provider = preferredProvider === 'gemini' ? 'openrouter' : 'gemini';
+        apiKey = provider === 'gemini' ? localKeys.geminiKey : localKeys.apiKey;
+    }
+
+    return { provider, apiKey, hasKey: !!apiKey };
+}
+
+/**
  * Selection-based Jargon Decoder
  * Shows a floating button when text is selected to decode only that portion
  */
+
 function initSelectionDecoder() {
     // Create floating toolbar container
     const selectionToolbar = document.createElement('div');
@@ -343,18 +366,16 @@ async function decodeSelectedText(selectedText, range) {
     state.abortController = new AbortController();
     state.isGenerating = true;
 
-    // Get API key based on selected provider
-    const { apiProvider } = await chrome.storage.sync.get('apiProvider');
-    const provider = apiProvider || 'openrouter';
-    const localKeys = await chrome.storage.local.get(['apiKey', 'geminiKey']);
-    const apiKey = provider === 'gemini' ? localKeys.geminiKey : localKeys.apiKey;
+    // Get API key with automatic fallback
+    const apiConfig = await getAvailableApiConfig();
 
-    if (!apiKey) {
+    if (!apiConfig.hasKey) {
         hideProgressLoader();
         state.isGenerating = false;
-        showNotification(`Please configure your ${provider === 'gemini' ? 'Gemini' : 'OpenRouter'} API key first`, 'error');
+        showNotification('Please configure an API key (OpenRouter or Gemini)', 'error');
         return;
     }
+
     updateProgress(20);
 
     try {
@@ -365,7 +386,7 @@ async function decodeSelectedText(selectedText, range) {
         const response = await chrome.runtime.sendMessage({
             action: 'detectJargon',
             pageText: selectedText,
-            apiKey,
+            apiKey: apiConfig.apiKey,
             abortSignal: state.abortController.signal.aborted
         });
 
@@ -423,16 +444,13 @@ async function simplifySelectedText(selectedText, range) {
     state.abortController = new AbortController();
     state.isGenerating = true;
 
-    // Get API key based on selected provider
-    const { apiProvider } = await chrome.storage.sync.get('apiProvider');
-    const provider = apiProvider || 'openrouter';
-    const localKeys = await chrome.storage.local.get(['apiKey', 'geminiKey']);
-    const apiKey = provider === 'gemini' ? localKeys.geminiKey : localKeys.apiKey;
+    // Get API key with automatic fallback
+    const apiConfig = await getAvailableApiConfig();
 
-    if (!apiKey) {
+    if (!apiConfig.hasKey) {
         hideProgressLoader();
         state.isGenerating = false;
-        showNotification(`Please configure your ${provider === 'gemini' ? 'Gemini' : 'OpenRouter'} API key first`, 'error');
+        showNotification('Please configure an API key (OpenRouter or Gemini)', 'error');
         return;
     }
     updateProgress(20);
@@ -445,7 +463,7 @@ async function simplifySelectedText(selectedText, range) {
         const response = await chrome.runtime.sendMessage({
             action: 'simplifyText',
             text: selectedText,
-            apiKey,
+            apiKey: apiConfig.apiKey,
             abortSignal: state.abortController.signal.aborted
         });
 
@@ -1451,17 +1469,14 @@ async function activateJargonDecoder() {
     state.abortController = new AbortController();
     state.isGenerating = true;
 
-    // Get API key based on selected provider
-    const { apiProvider } = await chrome.storage.sync.get('apiProvider');
-    const provider = apiProvider || 'openrouter';
-    const localKeys = await chrome.storage.local.get(['apiKey', 'geminiKey']);
-    const apiKey = provider === 'gemini' ? localKeys.geminiKey : localKeys.apiKey;
+    // Get API key with automatic fallback
+    const apiConfig = await getAvailableApiConfig();
 
-    if (!apiKey) {
-        console.warn('InclusiveRead: No API key configured for', provider);
+    if (!apiConfig.hasKey) {
+        console.warn('InclusiveRead: No API key configured');
         hideProgressLoader();
         state.isGenerating = false;
-        showNotification(`Please configure your ${provider === 'gemini' ? 'Gemini' : 'OpenRouter'} API key first`, 'error');
+        showNotification('Please configure an API key (OpenRouter or Gemini)', 'error');
         return;
     }
     updateProgress(10);
@@ -1506,7 +1521,7 @@ async function activateJargonDecoder() {
             action: 'detectJargon',
             pageText: extractedContent.text,
             context: pageContext,
-            apiKey,
+            apiKey: apiConfig.apiKey,
             abortSignal: state.abortController.signal.aborted
         });
 
