@@ -1,8 +1,31 @@
 # InclusiveRead 🏛️
 
+![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+![Chrome](https://img.shields.io/badge/chrome-extension-orange.svg)
+![Manifest](https://img.shields.io/badge/manifest-v3-yellow.svg)
+
 **The AI-Powered Cognitive Bridge for Web Accessibility**
 
 InclusiveRead is a Chrome extension that reduces cognitive friction on websites for neurodivergent users (ADHD, Dyslexia, ASD) using AI-powered features to simplify complex content and improve readability.
+
+---
+
+## 📋 Table of Contents
+
+- [The Problem](#-the-problem)
+- [The Solution](#-the-solution)
+- [Installation](#-installation)
+- [Usage](#-usage)
+- [Features](#-features)
+- [Technical Stack](#️-technical-stack)
+- [Impact & Use Cases](#-impact--use-cases)
+- [Project Structure](#-project-structure)
+- [Privacy & Security](#-privacy--security)
+- [Contributing](#-contributing)
+- [License](#-license)
+
+---
 
 ## 🎯 The Problem
 
@@ -257,7 +280,9 @@ InclusiveRead/
 
 Contributions are welcome! This project aims to improve web accessibility for neurodivergent users.
 
-### How to Contribute
+Please read our [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
+
+### Quick Start for Contributors
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
 3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
@@ -272,9 +297,11 @@ Contributions are welcome! This project aims to improve web accessibility for ne
 - Documentation improvements
 - Accessibility testing
 
+See our [GitHub Issues](https://github.com/Shriraj888/InclusiveRead/issues) for current tasks and feature requests.
+
 ## 📄 License
 
-This project is open source and available for educational and non-commercial use.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
