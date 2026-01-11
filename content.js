@@ -18,7 +18,7 @@ let state = {
         lineHeight: 1.6,
         wordSpacing: 3,
         overlayColor: 'none',
-        syllableHighlight: false,
+
         bionicReading: false
     },
     ttsSettings: {
@@ -50,12 +50,14 @@ async function init() {
         'lineHeight',
         'wordSpacing',
         'overlayColor',
-        'syllableHighlight',
+
         'bionicReading',
         'ttsEnabled',
         'ttsSpeed',
         'ttsPauseOnPunctuation',
-        'ttsWordHighlight'
+        'ttsWordHighlight',
+        'ttsVolume',
+        'ttsVoice'
     ]);
 
     // Load API key from LOCAL storage (device-only, privacy-first)
@@ -72,7 +74,7 @@ async function init() {
             lineHeight: settings.lineHeight || 1.6,
             wordSpacing: settings.wordSpacing || 3,
             overlayColor: settings.overlayColor || 'none',
-            syllableHighlight: settings.syllableHighlight || false,
+
             bionicReading: settings.bionicReading || false
         };
     }
@@ -82,7 +84,9 @@ async function init() {
         state.ttsSettings = {
             speed: settings.ttsSpeed || 1,
             pauseOnPunctuation: settings.ttsPauseOnPunctuation !== false,
-            wordHighlight: settings.ttsWordHighlight !== false
+            wordHighlight: settings.ttsWordHighlight !== false,
+            volume: settings.ttsVolume !== undefined ? settings.ttsVolume / 100 : 0.7,
+            voice: settings.ttsVoice || 'auto'
         };
     }
 
@@ -107,10 +111,7 @@ async function init() {
     if (state.jargonEnabled) {
         await activateJargonDecoder();
     }
-
-    if (state.sensoryEnabled) {
-        activateSensoryShield();
-    }
+    // Note: sensoryEnabled is already activated above, no duplicate call needed
 
     // Initialize selection decoder (always available)
     initSelectionDecoder();
@@ -205,9 +206,32 @@ async function handleMessage(request) {
 }
 
 /**
+ * Get available API configuration with automatic fallback
+ * Returns the API key from the selected provider, or falls back to the other provider if available
+ */
+async function getAvailableApiConfig() {
+    const { apiProvider } = await chrome.storage.sync.get('apiProvider');
+    const preferredProvider = apiProvider || 'openrouter';
+    const localKeys = await chrome.storage.local.get(['apiKey', 'geminiKey']);
+
+    // Try preferred provider first
+    let provider = preferredProvider;
+    let apiKey = provider === 'gemini' ? localKeys.geminiKey : localKeys.apiKey;
+
+    // Fallback to other provider if preferred one has no key
+    if (!apiKey) {
+        provider = preferredProvider === 'gemini' ? 'openrouter' : 'gemini';
+        apiKey = provider === 'gemini' ? localKeys.geminiKey : localKeys.apiKey;
+    }
+
+    return { provider, apiKey, hasKey: !!apiKey };
+}
+
+/**
  * Selection-based Jargon Decoder
  * Shows a floating button when text is selected to decode only that portion
  */
+
 function initSelectionDecoder() {
     // Create floating toolbar container
     const selectionToolbar = document.createElement('div');
@@ -342,14 +366,16 @@ async function decodeSelectedText(selectedText, range) {
     state.abortController = new AbortController();
     state.isGenerating = true;
 
-    // Get API key from LOCAL storage
-    const { apiKey } = await chrome.storage.local.get('apiKey');
-    if (!apiKey) {
+    // Get API key with automatic fallback
+    const apiConfig = await getAvailableApiConfig();
+
+    if (!apiConfig.hasKey) {
         hideProgressLoader();
         state.isGenerating = false;
-        showNotification('Please configure your API key first', 'error');
+        showNotification('Please configure an API key (OpenRouter or Gemini)', 'error');
         return;
     }
+
     updateProgress(20);
 
     try {
@@ -360,7 +386,7 @@ async function decodeSelectedText(selectedText, range) {
         const response = await chrome.runtime.sendMessage({
             action: 'detectJargon',
             pageText: selectedText,
-            apiKey,
+            apiKey: apiConfig.apiKey,
             abortSignal: state.abortController.signal.aborted
         });
 
@@ -418,12 +444,13 @@ async function simplifySelectedText(selectedText, range) {
     state.abortController = new AbortController();
     state.isGenerating = true;
 
-    // Get API key from LOCAL storage
-    const { apiKey } = await chrome.storage.local.get('apiKey');
-    if (!apiKey) {
+    // Get API key with automatic fallback
+    const apiConfig = await getAvailableApiConfig();
+
+    if (!apiConfig.hasKey) {
         hideProgressLoader();
         state.isGenerating = false;
-        showNotification('Please configure your API key first', 'error');
+        showNotification('Please configure an API key (OpenRouter or Gemini)', 'error');
         return;
     }
     updateProgress(20);
@@ -436,7 +463,7 @@ async function simplifySelectedText(selectedText, range) {
         const response = await chrome.runtime.sendMessage({
             action: 'simplifyText',
             text: selectedText,
-            apiKey,
+            apiKey: apiConfig.apiKey,
             abortSignal: state.abortController.signal.aborted
         });
 
@@ -1421,71 +1448,8 @@ function injectSelectionDecoderStyles() {
     injectCSS(css, 'ir-selection-decoder-styles');
 }
 
-async function handleMessage(request) {
-    switch (request.action) {
-        case 'toggleJargon':
-            state.jargonEnabled = request.enabled;
-            if (request.enabled) {
-                await activateJargonDecoder();
-            } else {
-                deactivateJargonDecoder();
-            }
-            break;
-
-        case 'toggleSensory':
-            state.sensoryEnabled = request.enabled;
-            if (request.enabled) {
-                activateSensoryShield();
-            } else {
-                deactivateSensoryShield();
-            }
-            break;
-
-        case 'toggleDyslexia':
-            state.dyslexiaEnabled = request.enabled;
-            if (request.enabled) {
-                activateDyslexiaMode(request.settings);
-            } else {
-                deactivateDyslexiaMode();
-            }
-            break;
-
-        case 'updateDyslexia':
-            if (state.dyslexiaEnabled) {
-                updateDyslexiaSettings(request.settings);
-            }
-            break;
-
-        case 'toggleTTS':
-            state.ttsEnabled = request.enabled;
-            if (request.enabled) {
-                activateTTSMode(request.settings);
-            } else {
-                deactivateTTSMode();
-            }
-            break;
-
-        case 'updateTTS':
-            if (state.ttsEnabled) {
-                updateTTSSettings(request.settings);
-            }
-            break;
-
-        case 'ttsPlay':
-            playTTS();
-            break;
-
-        case 'ttsPause':
-            pauseTTS();
-            break;
-
-        case 'ttsStop':
-            stopTTS();
-            break;
-    }
-
-    return { success: true };
-}
+// Note: handleMessage function is defined earlier in the file (around line 137)
+// This comment replaces a duplicate definition that was removed to fix a bug
 
 /**
  * FEATURE 1: Jargon Decoder (Enhanced)
@@ -1505,13 +1469,14 @@ async function activateJargonDecoder() {
     state.abortController = new AbortController();
     state.isGenerating = true;
 
-    // Get API key from LOCAL storage
-    const { apiKey } = await chrome.storage.local.get('apiKey');
-    if (!apiKey) {
+    // Get API key with automatic fallback
+    const apiConfig = await getAvailableApiConfig();
+
+    if (!apiConfig.hasKey) {
         console.warn('InclusiveRead: No API key configured');
         hideProgressLoader();
         state.isGenerating = false;
-        showNotification('Please configure your API key first', 'error');
+        showNotification('Please configure an API key (OpenRouter or Gemini)', 'error');
         return;
     }
     updateProgress(10);
@@ -1556,7 +1521,7 @@ async function activateJargonDecoder() {
             action: 'detectJargon',
             pageText: extractedContent.text,
             context: pageContext,
-            apiKey,
+            apiKey: apiConfig.apiKey,
             abortSignal: state.abortController.signal.aborted
         });
 
@@ -1805,12 +1770,21 @@ function applyJargonReplacement({ jargon, simple, explanation, category, difficu
 }
 
 /**
- * Escape HTML special characters
+ * Escape HTML special characters for XSS protection
+ * @param {string} str - The string to escape
+ * @returns {string} - The escaped string safe for HTML insertion
  */
 function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    if (typeof str !== 'string') {
+        return '';
+    }
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/`/g, '&#96;');
 }
 
 /**
@@ -2314,8 +2288,7 @@ function deactivateDyslexiaMode() {
     removeCSS('ir-dyslexia-overlay');
     removeCSS('ir-opendyslexic-font');
 
-    // Remove bionic reading and syllable highlighting
-    document.querySelectorAll('.ir-bionic-word, .ir-syllable-word').forEach(el => {
+    document.querySelectorAll('.ir-bionic-word').forEach(el => {
         el.replaceWith(el.textContent);
     });
 
@@ -2464,15 +2437,6 @@ function applyDyslexiaStyles(settings) {
         injectCSS(overlayStyle, 'ir-dyslexia-overlay');
     }
 
-    // Syllable highlighting - DISABLED due to Chrome crashes
-    // This feature causes performance issues and crashes on large pages
-    // TODO: Implement more efficient algorithm if needed
-    if (settings.syllableHighlight) {
-        console.warn('Syllable highlighting is temporarily disabled due to performance issues');
-        // showNotification('Syllable highlighting is temporarily disabled', 'info');
-    }
-    removeSyllableHighlighting();
-
     // Apply bionic reading
     if (settings.bionicReading) {
         applyBionicReading();
@@ -2481,50 +2445,7 @@ function applyDyslexiaStyles(settings) {
     }
 }
 
-function applySyllableHighlighting() {
-    // Simple syllable detection (alternating colors)
-    const textNodes = getTextNodes(document.body);
 
-    textNodes.forEach(node => {
-        // Skip if already processed or in special elements
-        if (node.parentElement?.classList.contains('ir-syllable-word') ||
-            node.parentElement?.closest('.ir-jargon, .ir-selection-toolbar, script, style, code, pre')) {
-            return;
-        }
-
-        const text = node.textContent;
-        const words = text.split(/(\s+)/);
-
-        if (words.length > 1) {
-            const span = document.createElement('span');
-            span.className = 'ir-syllable-word';
-
-            words.forEach((word, index) => {
-                const wordSpan = document.createElement('span');
-                wordSpan.textContent = word;
-
-                // Alternate colors for syllables (simplified - just alternating words)
-                if (!word.trim()) {
-                    wordSpan.textContent = word;
-                } else if (index % 2 === 0) {
-                    wordSpan.style.color = 'inherit';
-                } else {
-                    wordSpan.style.opacity = '0.7';
-                }
-
-                span.appendChild(wordSpan);
-            });
-
-            node.replaceWith(span);
-        }
-    });
-}
-
-function removeSyllableHighlighting() {
-    document.querySelectorAll('.ir-syllable-word').forEach(el => {
-        el.replaceWith(el.textContent);
-    });
-}
 
 function applyBionicReading() {
     const textNodes = getTextNodes(document.body);
@@ -2870,73 +2791,113 @@ function playTTS() {
         return;
     }
 
-    // Limit text length to avoid errors (max ~32KB)
-    const maxLength = 32000;
-    let textToRead = content.substring(0, maxLength);
+    // Split content into chunks (sentences/paragraphs) for better control
+    const chunks = splitIntoChunks(content);
 
-    if (state.ttsSettings.pauseOnPunctuation) {
-        // Add slight pauses after punctuation
-        textToRead = textToRead
-            .replace(/\./g, '. ')
-            .replace(/,/g, ', ')
-            .replace(/;/g, '; ')
-            .replace(/:/g, ': ')
-            .replace(/\?/g, '? ')
-            .replace(/!/g, '! ');
+    if (chunks.length === 0) {
+        showNotification('No readable content found', 'error');
+        return;
     }
 
-    state.ttsState.textContent = textToRead;
-    state.ttsState.words = textToRead.split(/\s+/).filter(w => w.trim().length > 0);
+    // Store chunks in state for sequential reading
+    state.ttsState.chunks = chunks;
+    state.ttsState.currentChunkIndex = 0;
+    state.ttsState.textContent = content;
+    state.ttsState.words = content.split(/\s+/).filter(w => w.trim().length > 0);
     state.ttsState.currentWordIndex = 0;
 
-    const utterance = new SpeechSynthesisUtterance(textToRead);
+    showNotification(`Reading ${chunks.length} sections...`, 'info');
 
-    // Ensure valid rate (0.1 to 10)
-    utterance.rate = Math.max(0.1, Math.min(10, state.ttsSettings.speed || 1));
-    utterance.pitch = 1;
-    utterance.volume = 1;
+    // Start reading first chunk
+    playNextChunk();
+}
 
-    // Set language
-    utterance.lang = 'en-US';
+// Split text into manageable chunks (sentences/paragraphs)
+function splitIntoChunks(text) {
+    // Split by sentences (. ! ?) while keeping the punctuation
+    const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
 
-    // Get available voices and select the best quality voice
-    const voices = ttsEngine.getVoices();
-    if (voices.length > 0) {
-        // Filter for English voices
-        const englishVoices = voices.filter(voice => voice.lang.startsWith('en'));
+    const chunks = [];
+    let currentChunk = '';
+    const maxChunkLength = 500; // Characters per chunk for responsive settings changes
 
-        let selectedVoice = null;
+    for (const sentence of sentences) {
+        const trimmed = sentence.trim();
+        if (!trimmed) continue;
 
-        // Priority 1: Try to find a high-quality neural/natural voice (Google, Microsoft, etc.)
-        // These are usually marked with keywords like "Neural", "Natural", "Premium", "Enhanced"
-        const premiumVoice = englishVoices.find(voice =>
-            voice.name.toLowerCase().includes('neural') ||
-            voice.name.toLowerCase().includes('natural') ||
-            voice.name.toLowerCase().includes('premium') ||
-            voice.name.toLowerCase().includes('enhanced') ||
-            voice.name.toLowerCase().includes('studio') ||
-            (voice.name.includes('Google') && voice.lang === 'en-US')
-        );
-
-        if (premiumVoice) {
-            selectedVoice = premiumVoice;
+        // If adding this sentence would exceed limit, save current chunk and start new one
+        if (currentChunk.length + trimmed.length > maxChunkLength && currentChunk.length > 0) {
+            chunks.push(currentChunk.trim());
+            currentChunk = trimmed;
         } else {
-            // Priority 2: Try to find any en-US voice (best match for language)
-            const enUSVoice = englishVoices.find(voice => voice.lang === 'en-US');
-
-            if (enUSVoice) {
-                selectedVoice = enUSVoice;
-            } else {
-                // Priority 3: Use any English voice, or first available voice
-                selectedVoice = englishVoices[0] || voices[0];
-            }
+            currentChunk += ' ' + trimmed;
         }
-
-        utterance.voice = selectedVoice;
-        console.log('TTS: Using voice:', selectedVoice.name, selectedVoice.lang);
     }
 
-    // Word boundary event for highlighting
+    // Don't forget the last chunk
+    if (currentChunk.trim()) {
+        chunks.push(currentChunk.trim());
+    }
+
+    return chunks;
+}
+
+// Play the next chunk in the queue
+function playNextChunk() {
+    // Check if we should stop
+    if (!state.ttsState.isPlaying && state.ttsState.currentChunkIndex > 0) {
+        // User stopped playback
+        return;
+    }
+
+    // Check if we've finished all chunks
+    if (!state.ttsState.chunks || state.ttsState.currentChunkIndex >= state.ttsState.chunks.length) {
+        state.ttsState.isPlaying = false;
+        state.ttsState.isPaused = false;
+        state.ttsState.currentUtterance = null;
+        state.ttsState.chunks = [];
+        clearTTSHighlight();
+        showNotification('Reading complete', 'success');
+        return;
+    }
+
+    const chunkText = state.ttsState.chunks[state.ttsState.currentChunkIndex];
+    const utterance = new SpeechSynthesisUtterance(chunkText);
+
+    // Apply CURRENT settings (allows live changes between chunks)
+    utterance.rate = Math.max(0.1, Math.min(10, state.ttsSettings.speed || 1));
+    utterance.pitch = 1;
+    utterance.volume = Math.max(0, Math.min(1, state.ttsSettings.volume || 0.7));
+    utterance.lang = 'en-US';
+
+    // Select voice
+    const voices = ttsEngine.getVoices();
+    if (voices.length > 0) {
+        let selectedVoice = null;
+
+        if (state.ttsSettings.voice && state.ttsSettings.voice !== 'auto') {
+            selectedVoice = voices.find(v => v.name === state.ttsSettings.voice);
+        }
+
+        if (!selectedVoice) {
+            const englishVoices = voices.filter(voice => voice.lang.startsWith('en'));
+            const premiumVoice = englishVoices.find(voice =>
+                voice.name.toLowerCase().includes('neural') ||
+                voice.name.toLowerCase().includes('natural') ||
+                voice.name.toLowerCase().includes('premium') ||
+                voice.name.toLowerCase().includes('enhanced') ||
+                voice.name.toLowerCase().includes('studio') ||
+                (voice.name.includes('Google') && voice.lang === 'en-US')
+            );
+            selectedVoice = premiumVoice || englishVoices.find(v => v.lang === 'en-US') || englishVoices[0] || voices[0];
+        }
+
+        if (selectedVoice) {
+            utterance.voice = selectedVoice;
+        }
+    }
+
+    // Word highlighting
     if (state.ttsSettings.wordHighlight) {
         utterance.onboundary = (event) => {
             if (event.name === 'word') {
@@ -2948,47 +2909,40 @@ function playTTS() {
     utterance.onstart = () => {
         state.ttsState.isPlaying = true;
         state.ttsState.isPaused = false;
-        showNotification('Reading started...', 'info');
     };
 
     utterance.onend = () => {
-        state.ttsState.isPlaying = false;
-        state.ttsState.isPaused = false;
-        state.ttsState.currentUtterance = null;
-        clearTTSHighlight();
-        showNotification('Reading complete', 'success');
+        // Move to next chunk
+        state.ttsState.currentChunkIndex++;
+
+        // Small delay between chunks for natural flow
+        setTimeout(() => {
+            playNextChunk();
+        }, 50);
     };
 
     utterance.onerror = (event) => {
-        console.error('TTS Error:', event.error, event);
-        state.ttsState.isPlaying = false;
-        state.ttsState.isPaused = false;
-        state.ttsState.currentUtterance = null;
-        clearTTSHighlight();
+        console.log('TTS Chunk Event:', event.error);
 
-        // Show user-friendly error message
-        let errorMsg = 'Speech synthesis error';
-        if (event.error === 'canceled') {
-            errorMsg = 'Speech was stopped';
-        } else if (event.error === 'interrupted') {
-            errorMsg = 'Speech was interrupted';
-        } else if (event.error === 'audio-busy') {
-            errorMsg = 'Audio is busy, try again';
-        } else if (event.error === 'not-allowed') {
-            errorMsg = 'Speech not allowed - check browser permissions';
+        if (event.error === 'canceled' || event.error === 'interrupted') {
+            // Expected when user stops - don't continue
+            state.ttsState.isPlaying = false;
+            state.ttsState.chunks = [];
+            return;
         }
-        showNotification(errorMsg, 'error');
+
+        // For other errors, try next chunk
+        state.ttsState.currentChunkIndex++;
+        playNextChunk();
     };
 
-    // Store utterance reference
     state.ttsState.currentUtterance = utterance;
+    ttsEngine.speak(utterance);
 
-    // Speak with a small delay to ensure everything is ready
-    setTimeout(() => {
-        if (state.ttsState.currentUtterance === utterance) {
-            ttsEngine.speak(utterance);
-        }
-    }, 100);
+    // Mark as playing on first chunk
+    if (state.ttsState.currentChunkIndex === 0) {
+        state.ttsState.isPlaying = true;
+    }
 }
 
 function playTTSSelection() {
@@ -3036,14 +2990,48 @@ function playTTSSelection() {
     // Ensure valid rate (0.1 to 10)
     utterance.rate = Math.max(0.1, Math.min(10, state.ttsSettings.speed || 1));
     utterance.pitch = 1;
-    utterance.volume = 1;
+    utterance.volume = Math.max(0, Math.min(1, state.ttsSettings.volume || 0.7)); // Use volume from settings
     utterance.lang = 'en-US';
 
-    // Get available voices and set a voice
+    // Get available voices and select voice (same logic as playTTS)
     const voices = ttsEngine.getVoices();
     if (voices.length > 0) {
-        const englishVoice = voices.find(voice => voice.lang.startsWith('en')) || voices[0];
-        utterance.voice = englishVoice;
+        let selectedVoice = null;
+
+        // Priority 1: Use user-selected voice if set
+        if (state.ttsSettings.voice && state.ttsSettings.voice !== 'auto') {
+            selectedVoice = voices.find(v => v.name === state.ttsSettings.voice);
+            if (selectedVoice) {
+                console.log('TTS Selection: Using user-selected voice:', selectedVoice.name);
+            }
+        }
+
+        // Priority 2: Auto-select best quality voice if no voice selected or voice not found
+        if (!selectedVoice) {
+            const englishVoices = voices.filter(voice => voice.lang.startsWith('en'));
+
+            // Try to find a high-quality neural/natural voice
+            const premiumVoice = englishVoices.find(voice =>
+                voice.name.toLowerCase().includes('neural') ||
+                voice.name.toLowerCase().includes('natural') ||
+                voice.name.toLowerCase().includes('premium') ||
+                voice.name.toLowerCase().includes('enhanced') ||
+                voice.name.toLowerCase().includes('studio') ||
+                (voice.name.includes('Google') && voice.lang === 'en-US')
+            );
+
+            if (premiumVoice) {
+                selectedVoice = premiumVoice;
+            } else {
+                const enUSVoice = englishVoices.find(voice => voice.lang === 'en-US');
+                selectedVoice = enUSVoice || englishVoices[0] || voices[0];
+            }
+            console.log('TTS Selection: Auto-selected voice:', selectedVoice?.name);
+        }
+
+        if (selectedVoice) {
+            utterance.voice = selectedVoice;
+        }
     }
 
     // Word boundary event for highlighting
@@ -3070,18 +3058,23 @@ function playTTSSelection() {
     };
 
     utterance.onerror = (event) => {
-        console.error('TTS Error:', event.error, event);
+        console.log('TTS Event:', event.error);
+
+        // Clean up state
         state.ttsState.isPlaying = false;
         state.ttsState.isPaused = false;
         state.ttsState.currentUtterance = null;
         clearTTSHighlight();
 
+        // Don't show error notifications for expected interruptions
+        if (event.error === 'canceled' || event.error === 'interrupted') {
+            // These are expected when user stops TTS, don't show error
+            return;
+        }
+
+        // Show error for unexpected issues
         let errorMsg = 'Speech synthesis error';
-        if (event.error === 'canceled') {
-            errorMsg = 'Speech was stopped';
-        } else if (event.error === 'interrupted') {
-            errorMsg = 'Speech was interrupted';
-        } else if (event.error === 'audio-busy') {
+        if (event.error === 'audio-busy') {
             errorMsg = 'Audio is busy, try again';
         } else if (event.error === 'not-allowed') {
             errorMsg = 'Speech not allowed - check browser permissions';
@@ -3115,18 +3108,28 @@ function pauseTTS() {
 function stopTTS() {
     if (ttsEngine) {
         try {
+            // Cancel all pending utterances
             ttsEngine.cancel();
+
+            // Force reset the speech synthesis to clear any stuck state
+            // This is a workaround for browsers that leave TTS in bad state after cancel
+            if (ttsEngine.speaking || ttsEngine.pending) {
+                ttsEngine.cancel();
+            }
         } catch (error) {
             console.error('Error canceling TTS:', error);
         }
     }
 
+    // Clean up all state
     state.ttsState.isPlaying = false;
     state.ttsState.isPaused = false;
     state.ttsState.currentUtterance = null;
     state.ttsState.currentWordIndex = 0;
     state.ttsState.words = [];
     state.ttsState.textContent = '';
+    state.ttsState.chunks = [];
+    state.ttsState.currentChunkIndex = 0;
 
     clearTTSHighlight();
     showNotification('Speech stopped', 'info');

@@ -13,7 +13,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 async function handleMessage(request, sender) {
     switch (request.action) {
         case 'testApiKey':
-            return await testApiKeyHandler(request.apiKey);
+            return await testApiKeyHandler(request.apiKey, request.provider);
 
         case 'detectJargon':
             return await detectJargonHandler(request.pageText, request.apiKey, request.abortSignal);
@@ -29,9 +29,9 @@ async function handleMessage(request, sender) {
 /**
  * Test API key validity
  */
-async function testApiKeyHandler(apiKey) {
+async function testApiKeyHandler(apiKey, provider) {
     try {
-        const result = await testApiKey(apiKey);
+        const result = await testApiKey(apiKey, provider);
         return result;
     } catch (error) {
         return { success: false, error: error.message };
@@ -47,7 +47,7 @@ async function detectJargonHandler(pageText, apiKey, abortSignal) {
         if (abortSignal) {
             return { success: false, error: 'Request aborted', aborted: true };
         }
-        
+
         const result = await detectJargon(pageText, apiKey);
         return { success: true, data: result };
     } catch (error) {
@@ -67,7 +67,7 @@ async function simplifyTextHandler(text, apiKey, abortSignal) {
         if (abortSignal) {
             return { success: false, error: 'Request aborted', aborted: true };
         }
-        
+
         const result = await simplifyText(text, apiKey);
         return { success: true, data: result };
     } catch (error) {
@@ -93,7 +93,7 @@ chrome.runtime.onInstalled.addListener((details) => {
             lineHeight: 1.6,
             wordSpacing: 3,
             overlayColor: 'none',
-            syllableHighlight: false,
+
             bionicReading: false,
             ttsEnabled: false,
             ttsSpeed: 1,

@@ -13,7 +13,7 @@ const lineHeightValue = document.getElementById('lineHeightValue');
 const wordSpacing = document.getElementById('wordSpacing');
 const wordSpacingValue = document.getElementById('wordSpacingValue');
 const overlayColor = document.getElementById('overlayColor');
-const syllableHighlight = document.getElementById('syllableHighlight');
+
 const bionicReading = document.getElementById('bionicReading');
 const ttsToggle = document.getElementById('ttsToggle');
 const ttsOptions = document.getElementById('ttsOptions');
@@ -23,6 +23,8 @@ const ttsStop = document.getElementById('ttsStop');
 const ttsSpeed = document.getElementById('ttsSpeed');
 const ttsPauseOnPunctuation = document.getElementById('ttsPauseOnPunctuation');
 const ttsWordHighlight = document.getElementById('ttsWordHighlight');
+const ttsVolume = document.getElementById('ttsVolume');
+const ttsVolumeValue = document.getElementById('ttsVolumeValue');
 const settingsBtn = document.getElementById('settingsBtn');
 const settingsPanel = document.getElementById('settingsPanel');
 const apiKeyInput = document.getElementById('apiKey');
@@ -30,6 +32,16 @@ const toggleKeyBtn = document.getElementById('toggleKey');
 const saveKeyBtn = document.getElementById('saveKey');
 const apiStatus = document.getElementById('apiStatus');
 const statusText = document.getElementById('statusText');
+const apiProvider = document.getElementById('apiProvider');
+const geminiKeyInput = document.getElementById('geminiKey');
+const toggleGeminiKeyBtn = document.getElementById('toggleGeminiKey');
+const ttsVoiceSelect = document.getElementById('ttsVoice');
+const apiProviderBadge = document.getElementById('apiProviderBadge');
+
+// Theme & Size Controls
+const themeToggle = document.getElementById('themeToggle');
+const themeLabel = document.getElementById('themeLabel');
+const sizeButtons = document.querySelectorAll('.size-btn');
 
 // Load saved settings
 chrome.storage.sync.get([
@@ -41,12 +53,17 @@ chrome.storage.sync.get([
   'lineHeight',
   'wordSpacing',
   'overlayColor',
-  'syllableHighlight',
+
   'bionicReading',
   'ttsEnabled',
   'ttsSpeed',
   'ttsPauseOnPunctuation',
-  'ttsWordHighlight'
+  'ttsWordHighlight',
+  'ttsVolume',
+  'theme',
+  'popupSize',
+  'apiProvider',
+  'ttsVoice'
 ], (result) => {
   jargonToggle.checked = result.jargonEnabled || false;
   sensoryToggle.checked = result.sensoryEnabled || false;
@@ -58,7 +75,6 @@ chrome.storage.sync.get([
   lineHeight.value = result.lineHeight || 1.6;
   wordSpacing.value = result.wordSpacing || 3;
   overlayColor.value = result.overlayColor || 'none';
-  syllableHighlight.checked = result.syllableHighlight || false;
   bionicReading.checked = result.bionicReading || false;
 
   // TTS settings
@@ -66,19 +82,48 @@ chrome.storage.sync.get([
   ttsSpeed.value = result.ttsSpeed || 1;
   ttsPauseOnPunctuation.checked = result.ttsPauseOnPunctuation !== false;
   ttsWordHighlight.checked = result.ttsWordHighlight !== false;
+  ttsVolume.value = result.ttsVolume !== undefined ? result.ttsVolume : 70;
+  ttsVolumeValue.textContent = (result.ttsVolume !== undefined ? result.ttsVolume : 70) + '%';
 
-  // Update range value displays
+  // API Provider
+  const selectedProvider = result.apiProvider || 'openrouter';
+  apiProvider.value = selectedProvider;
+
+  // Update badge directly
+  if (apiProviderBadge) {
+    apiProviderBadge.textContent = selectedProvider === 'gemini' ? 'Gemini' : 'OpenRouter';
+    apiProviderBadge.className = 'api-provider-badge ' + selectedProvider;
+  }
+
+  // Show/hide correct key sections
+  const openrouterSection = document.getElementById('openrouterSection');
+  const geminiSection = document.getElementById('geminiSection');
+  if (openrouterSection) openrouterSection.style.display = selectedProvider === 'openrouter' ? 'block' : 'none';
+  if (geminiSection) geminiSection.style.display = selectedProvider === 'gemini' ? 'block' : 'none';
+
   updateRangeValues();
 
   // Show/hide options
   dyslexiaOptions.style.display = dyslexiaToggle.checked ? 'flex' : 'none';
   ttsOptions.style.display = ttsToggle.checked ? 'flex' : 'none';
+
+  // Apply theme and size
+  applyTheme(result.theme || 'dark');
+  applySize(result.popupSize || 'normal');
+
+  // Populate TTS voices
+  populateTTSVoices(result.ttsVoice);
 });
 
-// Load API key separately from LOCAL storage (privacy-first)
-chrome.storage.local.get(['apiKey'], (result) => {
+// Load API keys separately from LOCAL storage (privacy-first)
+chrome.storage.local.get(['apiKey', 'geminiKey'], (result) => {
   if (result.apiKey) {
     apiKeyInput.value = result.apiKey;
+  }
+  if (result.geminiKey) {
+    geminiKeyInput.value = result.geminiKey;
+  }
+  if (result.apiKey || result.geminiKey) {
     showApiStatus('API key configured (local only)', 'success');
   }
 });
@@ -170,14 +215,7 @@ overlayColor.addEventListener('change', async (e) => {
   });
 });
 
-// Syllable highlighting
-syllableHighlight.addEventListener('change', async (e) => {
-  await chrome.storage.sync.set({ syllableHighlight: e.target.checked });
-  await sendMessageToActiveTab({
-    action: 'updateDyslexia',
-    settings: getDyslexiaSettings()
-  });
-});
+
 
 // Bionic reading
 bionicReading.addEventListener('change', async (e) => {
@@ -244,6 +282,18 @@ ttsWordHighlight.addEventListener('change', async (e) => {
   });
 });
 
+// TTS Volume
+ttsVolume.addEventListener('input', (e) => {
+  const volume = parseInt(e.target.value);
+  ttsVolumeValue.textContent = volume + '%';
+});
+
+ttsVolume.addEventListener('change', async (e) => {
+  const volume = parseInt(e.target.value);
+  await chrome.storage.sync.set({ ttsVolume: volume });
+  // Volume applies to next playback - don't interrupt current TTS
+});
+
 // Settings panel toggle
 settingsBtn.addEventListener('click', () => {
   const isOpen = settingsPanel.style.display === 'block';
@@ -265,33 +315,37 @@ toggleKeyBtn.addEventListener('click', () => {
 
 // Save API key
 saveKeyBtn.addEventListener('click', async () => {
-  const apiKey = apiKeyInput.value.trim();
+  const provider = apiProvider.value;
+  const key = provider === 'gemini' ? geminiKeyInput.value.trim() : apiKeyInput.value.trim();
 
-  if (!apiKey) {
+  if (!key) {
     showApiStatus('Please enter an API key', 'error');
     return;
   }
 
   // Validate API key format (basic check)
-  if (apiKey.length < 10) {
+  if (key.length < 10) {
     showApiStatus('API key looks too short', 'error');
     return;
   }
 
   // Save to LOCAL storage (device-only, never syncs)
-  await chrome.storage.local.set({ apiKey });
-  showApiStatus('API key saved locally (device-only) ✓', 'success');
+  const storageKey = provider === 'gemini' ? 'geminiKey' : 'apiKey';
+  await chrome.storage.local.set({ [storageKey]: key });
+  showApiStatus(`${provider === 'gemini' ? 'Gemini' : 'OpenRouter'} API key saved locally (device-only) ✓`, 'success');
   updateMainStatus();
 
-  // Test the API key
+  // Test the API key with the appropriate provider
   try {
+    showApiStatus('Validating API key...', 'info');
     const response = await chrome.runtime.sendMessage({
       action: 'testApiKey',
-      apiKey
+      apiKey: key,
+      provider: provider
     });
 
     if (response.success) {
-      showApiStatus('API key validated successfully', 'success');
+      showApiStatus(`${provider === 'gemini' ? 'Gemini' : 'OpenRouter'} API key validated successfully`, 'success');
     } else {
       showApiStatus(`API key error: ${response.error}`, 'error');
     }
@@ -352,6 +406,8 @@ async function sendMessageToActiveTab(message) {
 
 // Helper: Show API status message
 function showApiStatus(message, type) {
+  // Always reset display to ensure visibility
+  apiStatus.style.display = 'block';
   apiStatus.textContent = message;
   apiStatus.className = `status-message ${type}`;
 
@@ -386,7 +442,6 @@ function getDyslexiaSettings() {
     lineHeight: parseFloat(lineHeight.value),
     wordSpacing: parseInt(wordSpacing.value),
     overlayColor: overlayColor.value,
-    syllableHighlight: syllableHighlight.checked,
     bionicReading: bionicReading.checked
   };
 }
@@ -396,7 +451,9 @@ function getTTSSettings() {
   return {
     speed: parseFloat(ttsSpeed.value),
     pauseOnPunctuation: ttsPauseOnPunctuation.checked,
-    wordHighlight: ttsWordHighlight.checked
+    wordHighlight: ttsWordHighlight.checked,
+    volume: parseInt(ttsVolume.value),
+    voice: ttsVoiceSelect.value
   };
 }
 
@@ -413,4 +470,153 @@ function updateRangeValues() {
   wordSpacingValue.textContent = wordValue === 0 ? 'None' :
     wordValue < 4 ? 'Normal' :
       wordValue < 7 ? 'Wide' : 'Extra Wide';
+}
+
+// Theme Toggle
+themeToggle.addEventListener('click', async () => {
+  const currentTheme = document.body.classList.contains('light-theme') ? 'dark' : 'light';
+  applyTheme(currentTheme);
+  await chrome.storage.sync.set({ theme: currentTheme });
+});
+
+// Size Controls
+sizeButtons.forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const size = btn.dataset.size;
+    applySize(size);
+    await chrome.storage.sync.set({ popupSize: size });
+  });
+});
+
+// Helper: Apply theme
+function applyTheme(theme) {
+  if (theme === 'light') {
+    document.body.classList.add('light-theme');
+    themeLabel.textContent = 'Dark';
+    document.querySelector('.theme-icon-dark').style.display = 'none';
+    document.querySelector('.theme-icon-light').style.display = 'block';
+  } else {
+    document.body.classList.remove('light-theme');
+    themeLabel.textContent = 'Light';
+    document.querySelector('.theme-icon-dark').style.display = 'block';
+    document.querySelector('.theme-icon-light').style.display = 'none';
+  }
+}
+
+// Helper: Apply size
+function applySize(size) {
+  // Remove all size classes
+  document.body.classList.remove('size-compact', 'size-expanded');
+
+  // Add the selected size class
+  if (size === 'compact') {
+    document.body.classList.add('size-compact');
+  } else if (size === 'expanded') {
+    document.body.classList.add('size-expanded');
+  }
+
+  // Update active button
+  sizeButtons.forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.size === size);
+  });
+}
+
+// API Provider Selection
+apiProvider.addEventListener('change', async (e) => {
+  const provider = e.target.value;
+  await chrome.storage.sync.set({ apiProvider: provider });
+  updateProviderUI(provider);
+});
+
+// Update provider badge and key fields
+function updateProviderUI(provider) {
+  // Update badge
+  if (apiProviderBadge) {
+    apiProviderBadge.textContent = provider === 'gemini' ? 'Gemini' : 'OpenRouter';
+    apiProviderBadge.className = 'api-provider-badge ' + provider;
+  }
+
+  // Show/hide correct key field sections
+  const openrouterSection = document.getElementById('openrouterSection');
+  const geminiSection = document.getElementById('geminiSection');
+
+  if (openrouterSection) {
+    openrouterSection.style.display = provider === 'openrouter' ? 'block' : 'none';
+  }
+  if (geminiSection) {
+    geminiSection.style.display = provider === 'gemini' ? 'block' : 'none';
+  }
+}
+
+// Toggle Gemini Key Visibility
+toggleGeminiKeyBtn.addEventListener('click', () => {
+  const isPassword = geminiKeyInput.type === 'password';
+  geminiKeyInput.type = isPassword ? 'text' : 'password';
+  const eyeIcon = toggleGeminiKeyBtn.querySelector('svg');
+  if (isPassword) {
+    eyeIcon.innerHTML = '<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/>';
+  } else {
+    eyeIcon.innerHTML = '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>';
+  }
+});
+
+// Voice Selection
+ttsVoiceSelect.addEventListener('change', async (e) => {
+  await chrome.storage.sync.set({ ttsVoice: e.target.value });
+  // Notify content script of voice change
+  await sendMessageToActiveTab({
+    action: 'updateTTS',
+    settings: { ...getTTSSettings(), voice: e.target.value }
+  });
+});
+
+// Helper: Populate TTS Voices
+function populateTTSVoices(selectedVoice) {
+  // Get available voices
+  const voices = window.speechSynthesis.getVoices();
+
+  if (voices.length === 0) {
+    // Voices not loaded yet, wait for them
+    window.speechSynthesis.addEventListener('voiceschanged', () => {
+      populateTTSVoices(selectedVoice);
+    }, { once: true });
+    return;
+  }
+
+  // Clear existing options except the first "Auto" option
+  ttsVoiceSelect.innerHTML = '<option value="auto">Auto (Best Quality)</option>';
+
+  // Filter for English voices and rank by quality
+  const englishVoices = voices.filter(v => v.lang.startsWith('en'));
+
+  // Rank voices by quality indicators
+  const rankedVoices = englishVoices.sort((a, b) => {
+    const getScore = (voice) => {
+      let score = 0;
+      const name = voice.name.toLowerCase();
+
+      // Premium indicators
+      if (name.includes('neural') || name.includes('natural')) score += 100;
+      if (name.includes('premium') || name.includes('enhanced')) score += 80;
+      if (name.includes('google')) score += 60;
+      if (name.includes('microsoft')) score += 50;
+      if (voice.lang === 'en-US') score += 30;
+      if (voice.localService) score -= 10; // Prefer server voices
+
+      return score;
+    };
+
+    return getScore(b) - getScore(a);
+  });
+
+  // Add voices to dropdown
+  rankedVoices.forEach(voice => {
+    const option = document.createElement('option');
+    option.value = voice.name;
+    option.textContent = `${voice.name} (${voice.lang})`;
+    if (voice.name === selectedVoice) {
+      option.selected = true;
+    }
+    ttsVoiceSelect.appendChild(option);
+  });
 }

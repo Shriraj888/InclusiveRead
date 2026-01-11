@@ -90,6 +90,10 @@ function isVisible(el) {
  * Get XPath for an element
  */
 function getXPath(element) {
+    if (!element) {
+        return '';
+    }
+
     if (element.id) {
         return `//*[@id="${element.id}"]`;
     }
@@ -98,8 +102,13 @@ function getXPath(element) {
         return '/html/body';
     }
 
+    // Check for parentNode before recursion
+    if (!element.parentNode) {
+        return element.tagName ? '/' + element.tagName.toLowerCase() : '';
+    }
+
     let ix = 0;
-    const siblings = element.parentNode?.childNodes || [];
+    const siblings = element.parentNode.childNodes || [];
 
     for (let i = 0; i < siblings.length; i++) {
         const sibling = siblings[i];
@@ -110,6 +119,8 @@ function getXPath(element) {
             ix++;
         }
     }
+
+    return '';
 }
 
 /**
