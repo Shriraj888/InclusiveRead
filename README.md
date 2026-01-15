@@ -1,7 +1,6 @@
 # InclusiveRead 🏛️
 
 ![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
-![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Chrome](https://img.shields.io/badge/chrome-extension-orange.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-yellow.svg)
 
@@ -299,9 +298,6 @@ Please read our [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of co
 
 See our [GitHub Issues](https://github.com/Shriraj888/InclusiveRead/issues) for current tasks and feature requests.
 
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
