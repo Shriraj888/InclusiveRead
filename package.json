@@ -1,0 +1,11 @@
+{
+  "name": "inclusiveread",
+  "version": "1.0.0",
+  "description": "AI-Powered Cognitive Bridge for Public Web Services",
+  "scripts": {
+    "build:pdf": "node -e \"const fs=require('fs');const path=require('path');const src='node_modules/pdfjs-dist/build';const dest='lib';if(!fs.existsSync(dest))fs.mkdirSync(dest);fs.copyFileSync(path.join(src,'pdf.mjs'),path.join(dest,'pdf.mjs'));fs.copyFileSync(path.join(src,'pdf.worker.mjs'),path.join(dest,'pdf.worker.mjs'));console.log('PDF.js files copied to lib/');\""
+  },
+  "dependencies": {
+    "pdfjs-dist": "^5.4.530"
+  }
+}

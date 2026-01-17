@@ -38,6 +38,10 @@ const toggleGeminiKeyBtn = document.getElementById('toggleGeminiKey');
 const ttsVoiceSelect = document.getElementById('ttsVoice');
 const apiProviderBadge = document.getElementById('apiProviderBadge');
 
+// PDF Viewer elements
+const pdfViewerToggle = document.getElementById('pdfViewerToggle');
+const pdfViewerOptions = document.getElementById('pdfViewerOptions');
+
 // Theme & Size Controls
 const themeToggle = document.getElementById('themeToggle');
 const themeLabel = document.getElementById('themeLabel');
@@ -63,11 +67,20 @@ chrome.storage.sync.get([
   'theme',
   'popupSize',
   'apiProvider',
-  'ttsVoice'
+  'ttsVoice',
+  'pdfViewerEnabled'
 ], (result) => {
   jargonToggle.checked = result.jargonEnabled || false;
   sensoryToggle.checked = result.sensoryEnabled || false;
   dyslexiaToggle.checked = result.dyslexiaEnabled || false;
+
+  // PDF Viewer setting
+  if (pdfViewerToggle) {
+    pdfViewerToggle.checked = result.pdfViewerEnabled || false;
+    if (pdfViewerOptions) {
+      pdfViewerOptions.style.display = pdfViewerToggle.checked ? 'flex' : 'none';
+    }
+  }
 
   // Dyslexia settings
   dyslexiaFont.value = result.dyslexiaFont || 'opendyslexic';
@@ -143,6 +156,44 @@ sensoryToggle.addEventListener('change', async (e) => {
   await sendMessageToActiveTab({ action: 'toggleSensory', enabled });
   updateMainStatus();
 });
+
+// PDF Viewer toggle
+if (pdfViewerToggle) {
+  pdfViewerToggle.addEventListener('change', async (e) => {
+    const enabled = e.target.checked;
+    await chrome.storage.sync.set({ pdfViewerEnabled: enabled });
+    if (pdfViewerOptions) {
+      pdfViewerOptions.style.display = enabled ? 'flex' : 'none';
+    }
+    updateMainStatus();
+    
+    // Automatically open PDF viewer when toggle is turned on
+    if (enabled) {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab && tab.url) {
+        const url = tab.url.toLowerCase();
+        // Check if current page is a PDF
+        if (url.endsWith('.pdf') || url.includes('.pdf?') || tab.url.includes('application/pdf')) {
+          // Open PDF in new tab with our viewer
+          const viewerUrl = chrome.runtime.getURL('pdf-viewer.html') + '?url=' + encodeURIComponent(tab.url);
+          chrome.tabs.create({ url: viewerUrl });
+        }
+      }
+    } else {
+      // When toggle is turned off, redirect back to original PDF if in viewer
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab && tab.url && tab.url.includes('pdf-viewer.html')) {
+        // Extract original PDF URL from the viewer URL
+        const urlParams = new URLSearchParams(tab.url.split('?')[1]);
+        const originalPdfUrl = urlParams.get('url');
+        if (originalPdfUrl) {
+          // Navigate back to the original PDF
+          chrome.tabs.update(tab.id, { url: decodeURIComponent(originalPdfUrl) });
+        }
+      }
+    }
+  });
+}
 
 // Dyslexia toggle
 dyslexiaToggle.addEventListener('change', async (e) => {

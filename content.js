@@ -12,6 +12,8 @@ let state = {
     selectionDecoderActive: false,
     abortController: null,
     isGenerating: false,
+    isPDFMode: false,  // PDF mode flag
+    isInclusiveReadViewer: false, // Flag to indicate if running in our custom viewer
     dyslexiaSettings: {
         font: 'opendyslexic',
         letterSpacing: 1,
@@ -40,6 +42,26 @@ let state = {
 init();
 
 async function init() {
+    // Check if this is the InclusiveRead PDF Viewer page
+    if (window.location.href.includes('pdf-viewer.html')) {
+        state.isInclusiveReadViewer = true;
+        state.isPDFMode = true;
+        console.log('InclusiveRead: Running in custom PDF viewer mode');
+        
+        // Wait for pdfService to be available (set by pdf-viewer.js)
+        let attempts = 0;
+        while (!window.pdfService && attempts < 50) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            attempts++;
+        }
+        
+        if (window.pdfService) {
+            console.log('InclusiveRead: pdfService ready');
+        } else {
+            console.warn('InclusiveRead: pdfService not available after timeout');
+        }
+    }
+    
     // Load settings from sync storage
     const settings = await chrome.storage.sync.get([
         'jargonEnabled',
@@ -57,8 +79,12 @@ async function init() {
         'ttsPauseOnPunctuation',
         'ttsWordHighlight',
         'ttsVolume',
-        'ttsVoice'
+        'ttsVoice',
+        'pdfViewerEnabled'
     ]);
+
+    // We no longer auto-replace PDF - user must click button to open in new tab
+    // PDF detection is handled by the popup button now
 
     // Load API key from LOCAL storage (device-only, privacy-first)
     const { apiKey } = await chrome.storage.local.get('apiKey');
@@ -119,6 +145,17 @@ async function init() {
 
 // Listen for messages from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    // Only handle messages meant for content script
+    const contentActions = [
+        'toggleJargon', 'toggleSensory', 'togglePdfViewer', 'toggleDyslexia',
+        'updateDyslexia', 'toggleTTS', 'updateTTS', 'ttsPlay', 'ttsPause', 'ttsStop'
+    ];
+    
+    // If not a content script action, let it propagate to background script
+    if (!contentActions.includes(request.action)) {
+        return false; // Don't handle this message
+    }
+    
     handleMessage(request)
         .then(sendResponse)
         .catch(error => {
@@ -153,6 +190,11 @@ async function handleMessage(request) {
             } else {
                 deactivateSensoryShield();
             }
+            return { success: true };
+
+        // PDF Viewer Mode toggle - just acknowledge setting change
+        case 'togglePdfViewer':
+            // The actual PDF opening happens via the popup button
             return { success: true };
 
         // Dyslexia Reading Mode
@@ -200,8 +242,8 @@ async function handleMessage(request) {
             return { success: true };
 
         default:
-            console.warn('Unknown action:', action);
-            return { success: false, error: 'Unknown action' };
+            // Should not reach here due to filtering above
+            return { success: true };
     }
 }
 
@@ -1009,6 +1051,17 @@ function showSelectionDecodedPopup(jargonList, range) {
  */
 function injectSelectionDecoderStyles() {
     const css = `
+    /* Global text selection styles */
+    ::selection {
+        background: rgba(35, 44, 207, 0.5); !important;
+        color: rgba(35, 44, 207, 0.5) !important;
+    }
+    
+    ::-moz-selection {
+        background: rgba(35, 44, 207, 0.5) !important;
+        color: rgba(35, 44, 207, 0.5) !important;
+    }
+    
     /* Selection Toolbar Container */
     .ir-selection-toolbar {
         position: absolute;
@@ -1580,8 +1633,20 @@ async function activateJargonDecoder() {
 
 /**
  * Extract main content, avoiding navigation, ads, footers
+ * Supports both regular web pages and PDF documents
  */
 function extractMainContent() {
+    // Handle PDF mode
+    if (state.isPDFMode && typeof window.pdfService !== 'undefined') {
+        const pdfText = window.pdfService.extractPDFText();
+        return {
+            text: pdfText.slice(0, 8000),
+            element: document.getElementById('ir-pdf-container') || document.body,
+            length: pdfText.length,
+            isPDF: true
+        };
+    }
+
     // Try to find main content area
     const mainSelectors = [
         'main',
@@ -1716,6 +1781,19 @@ function applyJargonReplacement({ jargon, simple, explanation, category, difficu
     const safeExplanation = escapeHtml(explanation || '');
     const safeCategory = escapeHtml(category || 'general');
 
+    // Handle PDF mode - apply jargon highlighting to PDF text spans
+    if (state.isPDFMode && typeof window.pdfService !== 'undefined') {
+        applyJargonReplacementToPDF({
+            regex,
+            jargon,
+            safeSimple,
+            safeExplanation,
+            safeCategory,
+            difficulty
+        });
+        return;
+    }
+
     const walker = document.createTreeWalker(
         document.body,
         NodeFilter.SHOW_TEXT,
@@ -1767,6 +1845,104 @@ function applyJargonReplacement({ jargon, simple, explanation, category, difficu
         wrapper.innerHTML = html;
         textNode.replaceWith(wrapper);
     });
+}
+
+/**
+ * Apply jargon highlighting to PDF text spans
+ */
+function applyJargonReplacementToPDF({ regex, jargon, safeSimple, safeExplanation, safeCategory, difficulty }) {
+    const textSpans = window.pdfService.getPDFTextSpans();
+    
+    textSpans.forEach(span => {
+        if (span.dataset.jargonProcessed) return;
+        
+        const text = span.textContent;
+        if (!regex.test(text)) return;
+        
+        // Reset regex lastIndex since we're using 'g' flag
+        regex.lastIndex = 0;
+        
+        // Mark span as containing jargon
+        if (text.match(regex)) {
+            span.classList.add('ir-jargon-highlight');
+            span.dataset.simple = safeSimple;
+            span.dataset.explanation = safeExplanation;
+            span.dataset.category = safeCategory;
+            span.dataset.original = jargon;
+            span.dataset.difficulty = difficulty;
+            span.dataset.jargonProcessed = 'true';
+            
+            // Make visible
+            span.style.color = '#000';
+            span.style.opacity = '1';
+            
+            // Add click handler for tooltip
+            span.addEventListener('click', showPDFJargonTooltip);
+        }
+    });
+}
+
+/**
+ * Show tooltip for PDF jargon term
+ */
+function showPDFJargonTooltip(event) {
+    const span = event.target;
+    const simple = span.dataset.simple;
+    const explanation = span.dataset.explanation;
+    const category = span.dataset.category;
+    const original = span.dataset.original;
+    
+    // Remove existing tooltip
+    const existingTooltip = document.getElementById('ir-pdf-jargon-tooltip');
+    if (existingTooltip) existingTooltip.remove();
+    
+    // Create tooltip
+    const tooltip = document.createElement('div');
+    tooltip.id = 'ir-pdf-jargon-tooltip';
+    tooltip.className = 'ir-pdf-jargon-tooltip';
+    tooltip.innerHTML = `
+        <div class="ir-tooltip-header">
+            <span class="ir-tooltip-term">${original}</span>
+            <span class="ir-tooltip-category">${category}</span>
+        </div>
+        <div class="ir-tooltip-simple">${simple}</div>
+        ${explanation ? `<div class="ir-tooltip-explanation">${explanation}</div>` : ''}
+        <button class="ir-tooltip-close">×</button>
+    `;
+    
+    // Position tooltip
+    const rect = span.getBoundingClientRect();
+    tooltip.style.cssText = `
+        position: fixed;
+        left: ${rect.left}px;
+        top: ${rect.bottom + 5}px;
+        z-index: 10000001;
+        background: #1a1a2e;
+        color: white;
+        padding: 12px;
+        border-radius: 8px;
+        max-width: 300px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        font-size: 14px;
+    `;
+    
+    document.body.appendChild(tooltip);
+    
+    // Close button handler
+    tooltip.querySelector('.ir-tooltip-close').addEventListener('click', () => {
+        tooltip.remove();
+    });
+    
+    // Close on click outside
+    setTimeout(() => {
+        document.addEventListener('click', function closeTooltip(e) {
+            if (!tooltip.contains(e.target) && e.target !== span) {
+                tooltip.remove();
+                document.removeEventListener('click', closeTooltip);
+            }
+        });
+    }, 100);
 }
 
 /**
@@ -2217,6 +2393,25 @@ function deactivateJargonDecoder() {
         wrapper.replaceWith(text);
     });
 
+    // Clean up PDF jargon highlighting if in PDF mode
+    if (state.isPDFMode && typeof window.pdfService !== 'undefined') {
+        const textSpans = window.pdfService.getPDFTextSpans();
+        textSpans.forEach(span => {
+            span.classList.remove('ir-jargon-highlight');
+            delete span.dataset.simple;
+            delete span.dataset.explanation;
+            delete span.dataset.category;
+            delete span.dataset.original;
+            delete span.dataset.difficulty;
+            delete span.dataset.jargonProcessed;
+            span.style.color = 'transparent';
+            span.style.opacity = '0.2';
+        });
+        
+        // Remove any open tooltips
+        document.getElementById('ir-pdf-jargon-tooltip')?.remove();
+    }
+
     // Remove glossary panel and toggle
     document.querySelector('.ir-glossary-toggle')?.remove();
     document.querySelector('.ir-glossary-panel')?.remove();
@@ -2287,10 +2482,23 @@ function deactivateDyslexiaMode() {
     removeCSS('ir-dyslexia-styles');
     removeCSS('ir-dyslexia-overlay');
     removeCSS('ir-opendyslexic-font');
+    removeCSS('ir-pdf-dyslexia-styles');
 
     document.querySelectorAll('.ir-bionic-word').forEach(el => {
         el.replaceWith(el.textContent);
     });
+
+    // Reset PDF text layer if in PDF mode
+    if (state.isPDFMode && typeof window.pdfService !== 'undefined') {
+        window.pdfService.resetPDFTextStyles();
+        const textLayers = document.querySelectorAll('.ir-pdf-text-layer');
+        textLayers.forEach(layer => layer.classList.remove('ir-active', 'ir-dyslexia-active'));
+        
+        const pdfPages = document.querySelectorAll('.ir-pdf-page');
+        pdfPages.forEach(page => page.classList.remove('ir-dyslexia-active'));
+        
+        removeBionicReading(); // Clean up PDF bionic reading
+    }
 
     showNotification('Dyslexia mode deactivated', 'info');
 }
@@ -2411,6 +2619,11 @@ function applyDyslexiaStyles(settings) {
 
     injectCSS(styles, 'ir-dyslexia-styles');
 
+    // Apply PDF-specific dyslexia styles if in PDF mode
+    if (state.isPDFMode && typeof window.pdfService !== 'undefined') {
+        applyDyslexiaStylesToPDF(settings, fontFamily);
+    }
+
     // Apply overlay color if selected
     if (settings.overlayColor && settings.overlayColor !== 'none') {
         const overlayColors = {
@@ -2445,9 +2658,64 @@ function applyDyslexiaStyles(settings) {
     }
 }
 
-
-
+/**
+ * Apply dyslexia styles specifically to PDF text spans
+ */
+function applyDyslexiaStylesToPDF(settings, fontFamily) {
+    // Use readable view for PDFs - shows properly formatted text
+    if (typeof window.pdfService !== 'undefined' && window.pdfService.activateReadableView) {
+        window.pdfService.activateReadableView();
+    }
+    
+    const pdfStyles = `
+        /* Readable view styles for dyslexia mode */
+        .ir-readable-paragraph {
+            font-family: ${fontFamily} !important;
+            letter-spacing: ${settings.letterSpacing}px !important;
+            word-spacing: ${settings.wordSpacing}px !important;
+            line-height: ${settings.lineHeight} !important;
+            font-size: 18px !important;
+        }
+        
+        .ir-readable-content {
+            line-height: ${settings.lineHeight} !important;
+        }
+        
+        /* Legacy text layer styles (fallback) */
+        .ir-pdf-text-span {
+            font-family: ${fontFamily} !important;
+            letter-spacing: ${settings.letterSpacing}px !important;
+            word-spacing: ${settings.wordSpacing}px !important;
+            color: #000 !important;
+            opacity: 1 !important;
+        }
+        
+        .ir-pdf-text-layer {
+            opacity: 1 !important;
+        }
+        
+        /* Fade the canvas when dyslexia mode shows text */
+        .ir-pdf-page.ir-dyslexia-active .ir-pdf-canvas {
+            opacity: 0.15 !important;
+        }
+    `;
+    
+    injectCSS(pdfStyles, 'ir-pdf-dyslexia-styles');
+    
+    // Mark text layers and pages as active for CSS styling
+    const textLayers = document.querySelectorAll('.ir-pdf-text-layer');
+    textLayers.forEach(layer => layer.classList.add('ir-active', 'ir-dyslexia-active'));
+    
+    const pdfPages = document.querySelectorAll('.ir-pdf-page');
+    pdfPages.forEach(page => page.classList.add('ir-dyslexia-active'));
+}
 function applyBionicReading() {
+    // Handle PDF mode - apply bionic reading to PDF text spans
+    if (state.isPDFMode && typeof window.pdfService !== 'undefined') {
+        applyBionicReadingToPDF();
+        return;
+    }
+
     const textNodes = getTextNodes(document.body);
 
     textNodes.forEach(node => {
@@ -2487,7 +2755,61 @@ function applyBionicReading() {
     });
 }
 
+/**
+ * Apply bionic reading specifically to PDF text spans
+ */
+function applyBionicReadingToPDF() {
+    const textSpans = window.pdfService.getPDFTextSpans();
+    
+    textSpans.forEach(span => {
+        if (span.dataset.bionicApplied) return;
+        
+        const text = span.textContent;
+        const words = text.split(/(\s+)/);
+        
+        if (words.length > 0) {
+            span.innerHTML = '';
+            span.style.color = '#000';
+            span.style.opacity = '1';
+            
+            words.forEach(word => {
+                if (!word.trim()) {
+                    span.appendChild(document.createTextNode(word));
+                } else {
+                    const halfLength = Math.ceil(word.length / 2);
+                    const boldPart = document.createElement('span');
+                    boldPart.className = 'ir-bionic-bold';
+                    boldPart.textContent = word.substring(0, halfLength);
+                    boldPart.style.fontWeight = '700';
+                    
+                    span.appendChild(boldPart);
+                    span.appendChild(document.createTextNode(word.substring(halfLength)));
+                }
+            });
+            
+            span.dataset.bionicApplied = 'true';
+        }
+    });
+}
+
 function removeBionicReading() {
+    // Handle PDF mode
+    if (state.isPDFMode && typeof window.pdfService !== 'undefined') {
+        const textSpans = window.pdfService.getPDFTextSpans();
+        textSpans.forEach(span => {
+            if (span.dataset.bionicApplied) {
+                // Get all text content and reset
+                const text = span.textContent;
+                span.innerHTML = '';
+                span.textContent = text;
+                span.style.color = 'transparent';
+                span.style.opacity = '0.2';
+                delete span.dataset.bionicApplied;
+            }
+        });
+        return;
+    }
+
     document.querySelectorAll('.ir-bionic-word').forEach(el => {
         el.replaceWith(el.textContent);
     });
@@ -3136,6 +3458,11 @@ function stopTTS() {
 }
 
 function extractReadableContent() {
+    // Handle PDF mode - extract text from PDF
+    if (state.isPDFMode && typeof window.pdfService !== 'undefined') {
+        return window.pdfService.extractPDFText();
+    }
+
     // Try to find main content area
     const selectors = [
         'article',
@@ -3597,7 +3924,12 @@ function detectAnimations() {
 /**
  * Utility: Extract readable content for TTS
  */
-function extractReadableContent() {
+function extractReadableContentFull() {
+    // Handle PDF mode - extract text from PDF
+    if (state.isPDFMode && typeof window.pdfService !== 'undefined') {
+        return window.pdfService.extractPDFText();
+    }
+
     // Try to find main content area
     const mainSelectors = [
         'main',

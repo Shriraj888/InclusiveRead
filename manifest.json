@@ -21,6 +21,7 @@
       ],
       "js": [
         "dom-utils.js",
+        "pdf-service.js",
         "content.js"
       ],
       "css": [
@@ -45,7 +46,13 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "content.css"
+        "content.css",
+        "lib/pdf.mjs",
+        "lib/pdf.worker.mjs",
+        "pdf-viewer.html",
+        "pdf-viewer.js",
+        "fonts/opendyslexic.css",
+        "fonts/*"
       ],
       "matches": [
         "<all_urls>"
