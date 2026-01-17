@@ -1604,6 +1604,15 @@ async function activateJargonDecoder() {
 
         state.jargonMap = response.data;
 
+        // Set up page change listener for PDF mode to apply jargon to new pages
+        if (state.isPDFMode && typeof window.onPageChange !== 'undefined') {
+            window.onPageChange = (newPage) => {
+                if (state.jargonEnabled && state.jargonMap.length > 0) {
+                    applyJargonToPage(newPage);
+                }
+            };
+        }
+
         updateProgress(95);
 
         // Create glossary panel
@@ -1636,14 +1645,16 @@ async function activateJargonDecoder() {
  * Supports both regular web pages and PDF documents
  */
 function extractMainContent() {
-    // Handle PDF mode
+    // Handle PDF mode - extract only current page content
     if (state.isPDFMode && typeof window.pdfService !== 'undefined') {
-        const pdfText = window.pdfService.extractPDFText();
+        const currentPage = window.pdfService.getCurrentVisiblePage ? window.pdfService.getCurrentVisiblePage() : 1;
+        const pdfText = extractPDFPageText(currentPage);
         return {
             text: pdfText.slice(0, 8000),
             element: document.getElementById('ir-pdf-container') || document.body,
             length: pdfText.length,
-            isPDF: true
+            isPDF: true,
+            currentPage: currentPage
         };
     }
 
@@ -1771,6 +1782,22 @@ async function applyJargonReplacementsProgressive(jargonList) {
 }
 
 /**
+ * Extract text from a specific PDF page
+ */
+function extractPDFPageText(pageNumber) {
+    if (!window.pdfService || !window.pdfService.getPDFTextSpans) {
+        return '';
+    }
+    
+    const spans = window.pdfService.getPDFTextSpans(pageNumber);
+    let text = '';
+    spans.forEach(span => {
+        text += span.textContent + ' ';
+    });
+    return text.trim();
+}
+
+/**
  * Apply single jargon replacement
  */
 function applyJargonReplacement({ jargon, simple, explanation, category, difficulty }) {
@@ -1848,13 +1875,19 @@ function applyJargonReplacement({ jargon, simple, explanation, category, difficu
 }
 
 /**
- * Apply jargon highlighting to PDF text spans
+ * Apply jargon highlighting to PDF text spans (current page only)
+ * Only highlights the specific terms, not the entire line/span
  */
-function applyJargonReplacementToPDF({ regex, jargon, safeSimple, safeExplanation, safeCategory, difficulty }) {
-    const textSpans = window.pdfService.getPDFTextSpans();
+function applyJargonReplacementToPDF({ regex, jargon, safeSimple, safeExplanation, safeCategory, difficulty, pageNumber = null }) {
+    // Get current page if not specified
+    const currentPage = pageNumber !== null ? pageNumber : 
+        (window.pdfService.getCurrentVisiblePage ? window.pdfService.getCurrentVisiblePage() : null);
+    
+    const textSpans = window.pdfService.getPDFTextSpans(currentPage);
     
     textSpans.forEach(span => {
-        if (span.dataset.jargonProcessed) return;
+        // Skip if already fully processed for this term
+        if (span.dataset[`jargon_${escapeDataAttr(jargon)}`]) return;
         
         const text = span.textContent;
         if (!regex.test(text)) return;
@@ -1862,23 +1895,60 @@ function applyJargonReplacementToPDF({ regex, jargon, safeSimple, safeExplanatio
         // Reset regex lastIndex since we're using 'g' flag
         regex.lastIndex = 0;
         
-        // Mark span as containing jargon
-        if (text.match(regex)) {
-            span.classList.add('ir-jargon-highlight');
-            span.dataset.simple = safeSimple;
-            span.dataset.explanation = safeExplanation;
-            span.dataset.category = safeCategory;
-            span.dataset.original = jargon;
-            span.dataset.difficulty = difficulty;
-            span.dataset.jargonProcessed = 'true';
-            
-            // Make visible
-            span.style.color = '#000';
-            span.style.opacity = '1';
-            
-            // Add click handler for tooltip
-            span.addEventListener('click', showPDFJargonTooltip);
-        }
+        // Replace the span content with highlighted terms
+        const html = text.replace(regex, (match) => {
+            return `<span class="ir-jargon-term" 
+                data-simple="${safeSimple}" 
+                data-explanation="${safeExplanation}"
+                data-category="${safeCategory}"
+                data-original="${escapeHtml(match)}"
+                data-difficulty="${difficulty}">${match}</span>`;
+        });
+        
+        // Update span content with highlighted terms
+        span.innerHTML = html;
+        span.dataset[`jargon_${escapeDataAttr(jargon)}`] = 'true';
+        span.classList.add('ir-jargon-processed');
+        
+        // Keep the text transparent - only the background highlight should be visible
+        // The PDF canvas underneath shows the actual text
+        span.style.opacity = '1';
+        
+        // Add click handlers to the jargon terms within
+        span.querySelectorAll('.ir-jargon-term').forEach(term => {
+            term.addEventListener('click', showPDFJargonTooltip);
+        });
+    });
+}
+
+/**
+ * Escape string for use as data attribute key
+ */
+function escapeDataAttr(str) {
+    return str.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+}
+
+/**
+ * Apply existing jargon terms to a specific PDF page
+ */
+function applyJargonToPage(pageNumber) {
+    if (!state.jargonMap || state.jargonMap.length === 0) return;
+    
+    state.jargonMap.forEach(({ jargon, simple, explanation, category, difficulty }) => {
+        const regex = new RegExp(`\\b${escapeRegex(jargon)}\\b`, 'gi');
+        const safeSimple = escapeHtml(simple);
+        const safeExplanation = escapeHtml(explanation || '');
+        const safeCategory = escapeHtml(category || 'general');
+        
+        applyJargonReplacementToPDF({
+            regex,
+            jargon,
+            safeSimple,
+            safeExplanation,
+            safeCategory,
+            difficulty,
+            pageNumber
+        });
     });
 }
 
@@ -2397,19 +2467,33 @@ function deactivateJargonDecoder() {
     if (state.isPDFMode && typeof window.pdfService !== 'undefined') {
         const textSpans = window.pdfService.getPDFTextSpans();
         textSpans.forEach(span => {
+            // Remove highlighting classes
             span.classList.remove('ir-jargon-highlight');
-            delete span.dataset.simple;
-            delete span.dataset.explanation;
-            delete span.dataset.category;
-            delete span.dataset.original;
-            delete span.dataset.difficulty;
-            delete span.dataset.jargonProcessed;
-            span.style.color = 'transparent';
-            span.style.opacity = '0.2';
+            span.classList.remove('ir-jargon-processed');
+            
+            // Restore original text content (removes .ir-jargon-term spans)
+            if (span.querySelector('.ir-jargon-term')) {
+                span.textContent = span.textContent;
+            }
+            
+            // Clean up data attributes
+            const keysToDelete = Object.keys(span.dataset).filter(key => 
+                key.startsWith('jargon_') || 
+                ['simple', 'explanation', 'category', 'original', 'difficulty', 'jargonProcessed'].includes(key)
+            );
+            keysToDelete.forEach(key => delete span.dataset[key]);
+            
+            // Reset styles
+            span.style.opacity = '';
         });
         
         // Remove any open tooltips
         document.getElementById('ir-pdf-jargon-tooltip')?.remove();
+        
+        // Remove page change listener
+        if (typeof window.onPageChange !== 'undefined') {
+            window.onPageChange = null;
+        }
     }
 
     // Remove glossary panel and toggle

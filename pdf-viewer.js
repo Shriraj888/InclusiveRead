@@ -256,9 +256,60 @@ window.extractPDFTextByPage = function() {
 };
 
 // Get all text spans (for feature application)
-window.getPDFTextSpans = function() {
+window.getPDFTextSpans = function(pageNumber = null) {
+    if (pageNumber !== null) {
+        const pageContainer = document.querySelector(`.ir-pdf-page[data-page-number="${pageNumber}"]`);
+        if (pageContainer) {
+            return pageContainer.querySelectorAll('.ir-pdf-text-span');
+        }
+        return [];
+    }
     return document.querySelectorAll('.ir-pdf-text-span');
 };
+
+// Get current visible page number
+window.getCurrentVisiblePage = function() {
+    const pages = document.querySelectorAll('.ir-pdf-page');
+    const container = document.documentElement;
+    const scrollTop = window.scrollY;
+    const viewportHeight = window.innerHeight;
+    const viewportCenter = scrollTop + viewportHeight / 2;
+    
+    let currentPage = 1;
+    let minDistance = Infinity;
+    
+    pages.forEach(page => {
+        const rect = page.getBoundingClientRect();
+        const pageCenter = scrollTop + rect.top + rect.height / 2;
+        const distance = Math.abs(viewportCenter - pageCenter);
+        
+        if (distance < minDistance) {
+            minDistance = distance;
+            currentPage = parseInt(page.dataset.pageNumber) || 1;
+        }
+    });
+    
+    return currentPage;
+};
+
+// Notify when page changes (for jargon decoder)
+let lastVisiblePage = 1;
+window.onPageChange = null;
+
+function checkPageChange() {
+    const currentPage = window.getCurrentVisiblePage();
+    if (currentPage !== lastVisiblePage) {
+        lastVisiblePage = currentPage;
+        if (typeof window.onPageChange === 'function') {
+            window.onPageChange(currentPage);
+        }
+    }
+}
+
+// Listen for scroll to detect page changes
+window.addEventListener('scroll', () => {
+    checkPageChange();
+}, { passive: true });
 
 // Expose state for extension features
 window.pdfViewerState = state;
@@ -326,13 +377,23 @@ window.pdfService = {
     isPDFDocument: function() {
         return true; // We're always in PDF mode in this viewer
     },
-    getPDFTextSpans: function() {
+    getPDFTextSpans: function(pageNumber = null) {
         // Return readable view paragraphs if in dyslexia mode, otherwise text layer spans
         const readableView = document.getElementById('ir-readable-view');
         if (readableView && readableView.style.display !== 'none') {
+            if (pageNumber !== null) {
+                const readablePage = readableView.querySelector(`.ir-readable-page:nth-child(${pageNumber})`);
+                if (readablePage) {
+                    return readablePage.querySelectorAll('.ir-readable-paragraph');
+                }
+                return [];
+            }
             return document.querySelectorAll('.ir-readable-paragraph');
         }
-        return document.querySelectorAll('.ir-pdf-text-span');
+        return window.getPDFTextSpans(pageNumber);
+    },
+    getCurrentVisiblePage: function() {
+        return window.getCurrentVisiblePage();
     },
     extractPDFText: function() {
         return window.extractPDFText();

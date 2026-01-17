@@ -328,6 +328,30 @@
         .ir-pdf-text-span.ir-jargon-highlight:hover {
             background: rgba(255, 193, 7, 0.7) !important;
         }
+
+        /* Processed PDF spans with jargon terms - maintain layout */
+        .ir-pdf-text-span.ir-jargon-processed {
+            opacity: 1 !important;
+        }
+
+        /* Jargon term highlighting (individual terms only) */
+        .ir-jargon-term {
+            background: rgba(255, 235, 59, 0.5) !important;
+            color: transparent !important;
+            border-radius: 2px;
+            cursor: pointer;
+            padding: 0;
+            margin: 0;
+            display: inline;
+            position: static;
+            font: inherit;
+            line-height: inherit;
+            white-space: inherit;
+        }
+
+        .ir-jargon-term:hover {
+            background: rgba(255, 193, 7, 0.7) !important;
+        }
     </style>
 </head>
 <body>
