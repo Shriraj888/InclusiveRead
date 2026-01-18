@@ -532,7 +532,12 @@ async function simplifySelectedText(selectedText, range) {
         state.abortController = null;
 
         // Show simplified text popup
-        showSimplifiedTextPopup(selectedText, response.data, range);
+        // Check if a custom popup function is defined (e.g., for PDF mode)
+        if (typeof window.showSimplifiedTextPopup === 'function') {
+            window.showSimplifiedTextPopup(selectedText, response.data, range);
+        } else {
+            showSimplifiedTextPopup(selectedText, response.data, range);
+        }
 
     } catch (error) {
         console.error('Text simplification error:', error);

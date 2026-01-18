@@ -189,9 +189,10 @@ async function renderPDFPage(pageNum) {
         right: 0;
         bottom: 0;
         overflow: hidden;
-        opacity: 0.2;
+        opacity: 1;
         line-height: 1.0;
-        pointer-events: auto;
+        pointer-events: none;
+        background: transparent;
     `;
     
     pageContainer.appendChild(canvas);
@@ -247,32 +248,68 @@ async function renderTextLayer(container, textContent, viewport) {
         const fontHeight = Math.sqrt((tx[2] * tx[2]) + (tx[3] * tx[3]));
         const fontAscent = fontHeight;
         
+        // Try to extract font family from PDF
+        let fontFamily = 'sans-serif';
+        if (item.fontName) {
+            // Clean up font name and try to map to system fonts
+            const cleanFont = item.fontName.replace(/[+_-]/g, ' ').trim();
+            // Common PDF font mappings
+            if (cleanFont.includes('Times') || cleanFont.includes('Serif')) {
+                fontFamily = 'Times New Roman, serif';
+            } else if (cleanFont.includes('Helvetica') || cleanFont.includes('Arial')) {
+                fontFamily = 'Arial, Helvetica, sans-serif';
+            } else if (cleanFont.includes('Courier')) {
+                fontFamily = 'Courier New, monospace';
+            }
+        }
+        
         span.style.cssText = `
             position: absolute;
             left: ${tx[4]}px;
             top: ${tx[5] - fontAscent}px;
             font-size: ${fontHeight}px;
-            font-family: sans-serif;
+            font-family: ${fontFamily};
             transform-origin: 0% 0%;
             white-space: pre;
             color: transparent;
             pointer-events: auto;
             cursor: text;
+            user-select: text;
+            line-height: 1;
+            margin: 0;
+            padding: 0;
+            letter-spacing: 0;
+            word-spacing: 0;
+            height: ${fontHeight}px;
+            display: inline-block;
         `;
         
-        // Apply rotation if needed
+        // Add to container first to measure
+        container.appendChild(span);
+        
+        // Apply rotation and width scaling if needed
         const angle = Math.atan2(tx[1], tx[0]);
+        let transform = '';
+        
         if (angle !== 0) {
-            span.style.transform = `rotate(${angle}rad)`;
+            transform += `rotate(${angle}rad) `;
         }
         
-        // Scale width to match
+        // Scale width to match exact PDF text width
         if (item.width) {
             const textWidth = item.width * viewport.scale;
-            span.style.width = `${textWidth}px`;
+            const actualWidth = span.getBoundingClientRect().width;
+            
+            if (actualWidth > 0) {
+                const scaleX = textWidth / actualWidth;
+                transform += `scaleX(${scaleX})`;
+                span.style.width = `${actualWidth}px`;
+            }
         }
         
-        container.appendChild(span);
+        if (transform) {
+            span.style.transform = transform.trim();
+        }
     }
 }
 
@@ -344,26 +381,26 @@ function getPDFTextNodes() {
  * Apply styles to PDF text layer (for dyslexia mode, etc.)
  */
 function applyPDFTextStyles(styles) {
-    const spans = getPDFTextSpans();
+//    const spans = getPDFTextSpans();
     
-    spans.forEach(span => {
-        Object.assign(span.style, styles);
+  //  spans.forEach(span => {
+    //    Object.assign(span.style, styles);
         // Make text visible when styles are applied
-        span.style.color = styles.color || '#000';
-        span.style.opacity = '1';
-    });
+      //  span.style.color = styles.color || '#000';
+        //span.style.opacity = '0';
+   // });
 }
 
 /**
  * Reset PDF text layer styles
  */
 function resetPDFTextStyles() {
-    const spans = getPDFTextSpans();
+//    const spans = getPDFTextSpans();
     
-    spans.forEach(span => {
-        span.style.color = 'transparent';
-        span.style.opacity = '0.2';
-    });
+  //  spans.forEach(span => {
+    //    span.style.color = 'transparent';
+      //  span.style.opacity = '1';
+   // });
 }
 
 /**
@@ -397,11 +434,26 @@ function injectPDFStyles() {
             white-space: pre;
             pointer-events: auto;
             cursor: text;
+            color: transparent;
+            user-select: text;
         }
         
         .ir-pdf-text-span::selection {
-            background: rgba(35, 44, 207, 0.5);
-            color: rgba(35, 44, 207, 0.5);
+            background: rgb(100, 149, 237);
+            color: #fff !important;
+            text-shadow: none;
+        }
+        
+        .ir-pdf-text-span::-moz-selection {
+            background: rgb(100, 149, 237);
+            color: #fff !important;
+            text-shadow: none;
+        }
+        
+        /* Jargon terms remain interactive */
+        .ir-jargon-term {
+            pointer-events: auto;
+            cursor: pointer;
         }
         
         /* When dyslexia mode or other features are active */

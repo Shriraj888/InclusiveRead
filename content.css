@@ -41,17 +41,33 @@
     line-height: 1.0;
 }
 
-/* PDF Text Span */
+/* PDF Text Span - Interactive for selection and jargon highlighting */
 .ir-pdf-text-span {
     position: absolute;
     white-space: pre;
     pointer-events: auto;
     cursor: text;
+    color: transparent;
+    user-select: text;
+    line-height: 1;
+    margin: 0;
+    padding: 0;
+    letter-spacing: 0;
+    word-spacing: 0;
 }
 
+/* Make selected text visible and readable with opaque background */
 .ir-pdf-text-span::selection {
-    background: rgba(35, 44, 207, 0.5);;
-    color: rgba(35, 44, 207, 0.5);
+    background: rgb(100, 149, 237);
+    color: #fff !important;
+    text-shadow: none;
+    -webkit-text-fill-color: #fff;
+}
+
+.ir-pdf-text-span::-moz-selection {
+    background: rgb(100, 149, 237);
+    color: #fff !important;
+    text-shadow: none;
 }
 
 /* Active text layer (when dyslexia mode or other features are on) */
@@ -80,21 +96,26 @@
 
 /* PDF Jargon Term Highlighting (individual terms only) */
 .ir-jargon-term {
-    background: rgba(255, 235, 59, 0.5) !important;
-    color: transparent !important;
+    background: rgba(255, 235, 59, 0.4) !important;
+    color: #000 !important;
+    font-weight: 400;
+    border-bottom: 1px solid rgba(234, 179, 8, 0.6);
     border-radius: 2px;
     cursor: pointer;
-    padding: 0;
+    padding: 1px 0;
     margin: 0;
     display: inline;
     position: static;
     font: inherit;
     line-height: inherit;
     white-space: inherit;
+    transition: all 0.2s;
 }
 
 .ir-jargon-term:hover {
-    background: rgba(255, 193, 7, 0.7) !important;
+    background: rgba(255, 235, 59, 0.6) !important;
+    border-bottom-color: rgba(234, 179, 8, 0.8);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 /* PDF Jargon Tooltip */

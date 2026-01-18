@@ -151,7 +151,7 @@
             display: block;
         }
 
-        /* Text Layer */
+        /* Text Layer - Interactive for selection and jargon highlighting */
         .ir-pdf-text-layer {
             position: absolute;
             left: 0;
@@ -159,9 +159,8 @@
             right: 0;
             bottom: 0;
             overflow: hidden;
-            opacity: 0.2;
             line-height: 1.0;
-            pointer-events: auto;
+            pointer-events: none;
         }
 
         .ir-pdf-text-span {
@@ -170,11 +169,32 @@
             pointer-events: auto;
             cursor: text;
             color: transparent;
+            user-select: text;
+            line-height: 1;
+            margin: 0;
+            padding: 0;
+            letter-spacing: 0;
+            word-spacing: 0;
+        }
+        
+        /* Make selected text fully visible and readable */
+        .ir-pdf-text-span::selection {
+            background: rgb(100, 149, 237);
+            color: #fff !important;
+            text-shadow: none;
+            -webkit-text-fill-color: #fff;
+        }
+        
+        .ir-pdf-text-span::-moz-selection {
+            background: rgb(100, 149, 237);
+            color: #fff !important;
+            text-shadow: none;
         }
 
-        .ir-pdf-text-span::selection {
-            background: rgba(30, 58, 138, 0.7);
-            color: #5142c4;
+        /* Jargon terms remain interactive */
+        .ir-jargon-term {
+            pointer-events: auto;
+            cursor: pointer;
         }
 
         /* Dyslexia mode - make text visible and styled */
@@ -412,5 +432,6 @@
     <script src="dom-utils.js"></script>
     <script src="gemini-service.js"></script>
     <script src="content.js"></script>
+    <script src="pdf-text-processor.js"></script>
 </body>
 </html>
