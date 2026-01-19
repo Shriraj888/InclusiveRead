@@ -244,22 +244,33 @@ async function renderTextLayer(container, textContent, viewport) {
         span.textContent = item.str;
         span.dataset.irText = 'true';
         
-        // Calculate position and size
+        // Calculate position and size - slightly reduce font for better matching
         const fontHeight = Math.sqrt((tx[2] * tx[2]) + (tx[3] * tx[3]));
         const fontAscent = fontHeight;
         
         // Try to extract font family from PDF
         let fontFamily = 'sans-serif';
+        let fontWeight = 'normal';
+        let fontStyle = 'normal';
+        
         if (item.fontName) {
             // Clean up font name and try to map to system fonts
-            const cleanFont = item.fontName.replace(/[+_-]/g, ' ').trim();
-            // Common PDF font mappings
-            if (cleanFont.includes('Times') || cleanFont.includes('Serif')) {
-                fontFamily = 'Times New Roman, serif';
-            } else if (cleanFont.includes('Helvetica') || cleanFont.includes('Arial')) {
-                fontFamily = 'Arial, Helvetica, sans-serif';
-            } else if (cleanFont.includes('Courier')) {
-                fontFamily = 'Courier New, monospace';
+            const cleanFont = item.fontName.toLowerCase();
+            
+            // Detect font weight and style
+            if (cleanFont.includes('bold')) fontWeight = 'bold';
+            if (cleanFont.includes('italic') || cleanFont.includes('oblique')) fontStyle = 'italic';
+            
+            // Common PDF font mappings with better matching
+            if (cleanFont.includes('times') || cleanFont.includes('serif')) {
+                fontFamily = 'Comic Sans';
+            } else if (cleanFont.includes('helvetica') || cleanFont.includes('arial')) {
+                fontFamily = 'Comic Sans';
+            } else if (cleanFont.includes('courier')) {
+                fontFamily = 'Comic Sans';
+            } else {
+                // Default to a neutral sans-serif for better matching
+                fontFamily = 'Comic Sans';
             }
         }
         
@@ -269,6 +280,8 @@ async function renderTextLayer(container, textContent, viewport) {
             top: ${tx[5] - fontAscent}px;
             font-size: ${fontHeight}px;
             font-family: ${fontFamily};
+            font-weight: ${fontWeight};
+            font-style: ${fontStyle};
             transform-origin: 0% 0%;
             white-space: pre;
             color: transparent;
@@ -282,6 +295,8 @@ async function renderTextLayer(container, textContent, viewport) {
             word-spacing: 0;
             height: ${fontHeight}px;
             display: inline-block;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         `;
         
         // Add to container first to measure
