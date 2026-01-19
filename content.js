@@ -1101,7 +1101,7 @@ function showSelectionDecodedPopup(jargonList, range) {
             popup.classList.remove('ir-visible');
             setTimeout(() => popup.remove(), 200);
         }
-    }, 15000);
+    }, 300000);
 }
 
 /**
