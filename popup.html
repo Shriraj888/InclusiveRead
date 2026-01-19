@@ -12,6 +12,18 @@
 </head>
 
 <body>
+    <!-- Onboarding Tour -->
+    <div class="tour-overlay" id="tourOverlay"></div>
+    <div class="tour-spotlight" id="tourSpotlight" style="display: none;"></div>
+    <div class="tour-arrow" id="tourArrow" style="display: none;">
+        <svg viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M45 15C35 20 25 35 20 50" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
+            <path d="M15 42L20 50L28 45" stroke="currentColor" stroke-width="3" stroke-linecap="round"
+                stroke-linejoin="round" />
+        </svg>
+    </div>
+    <div class="tour-tooltip" id="tourTooltip" style="display: none;"></div>
+
     <div class="container">
         <header>
             <div class="logo">
@@ -302,37 +314,19 @@
                         </svg>
                     </span>
                 </button>
-                <span class="api-provider-badge openrouter" id="apiProviderBadge"
-                    title="Active AI Provider">OpenRouter</span>
+                <span class="api-provider-badge gemini" id="apiProviderBadge" title="Active AI Provider">Gemini</span>
                 <div class="settings-panel" id="settingsPanel" style="display: none;">
                     <div class="option-group">
                         <label class="option-label">
                             <span>AI Provider</span>
                             <select id="apiProvider">
-                                <option value="openrouter">OpenRouter</option>
                                 <option value="gemini">Google Gemini</option>
+                                <option value="openrouter">OpenRouter</option>
                             </select>
                         </label>
                     </div>
 
-                    <label id="openrouterSection">
-                        <span>OpenRouter API Key</span>
-                        <div class="input-group">
-                            <input type="password" id="apiKey" placeholder="sk-or-...">
-                            <button id="toggleKey" class="icon-btn">
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                                    stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
-                                    stroke-linejoin="round" id="eyeIcon">
-                                    <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
-                                    <circle cx="12" cy="12" r="3" />
-                                </svg>
-                            </button>
-                        </div>
-                        <small>Get your free key at <a href="https://openrouter.ai/keys"
-                                target="_blank">OpenRouter</a></small>
-                    </label>
-
-                    <label id="geminiSection" style="display: none;">
+                    <label id="geminiSection">
                         <span>Gemini API Key</span>
                         <div class="input-group">
                             <input type="password" id="geminiKey" placeholder="AIza...">
@@ -347,6 +341,23 @@
                         </div>
                         <small>Get your free key at <a href="https://aistudio.google.com/app/apikey"
                                 target="_blank">Google AI Studio</a></small>
+                    </label>
+
+                    <label id="openrouterSection" style="display: none;">
+                        <span>OpenRouter API Key</span>
+                        <div class="input-group">
+                            <input type="password" id="apiKey" placeholder="sk-or-...">
+                            <button id="toggleKey" class="icon-btn">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                    stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+                                    stroke-linejoin="round" id="eyeIcon">
+                                    <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+                                    <circle cx="12" cy="12" r="3" />
+                                </svg>
+                            </button>
+                        </div>
+                        <small>Get your free key at <a href="https://openrouter.ai/keys"
+                                target="_blank">OpenRouter</a></small>
                     </label>
 
                     <button id="saveKey" class="btn-primary">Save API Key</button>
@@ -372,6 +383,7 @@
                         d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
                 </svg>
             </p>
+            <span class="tour-link" id="restartTour">Take a quick tour</span>
         </footer>
     </div>
     <script src="popup.js"></script>

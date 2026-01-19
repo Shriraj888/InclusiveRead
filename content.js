@@ -32,9 +32,109 @@ let state = {
         currentUtterance: null,
         currentWordIndex: 0,
         textContent: '',
-        words: []
+        words: [],
+        // DOM highlighting
+        selectionRange: null,
+        wordSpans: [],
+        // Time-based fallback for voices without onboundary support (e.g., Google voices)
+        speechStartTime: 0,
+        highlightIntervalId: null,
+        useTimeFallback: false,
+        boundaryFired: false
     }
 };
+
+// Theme system for content script UI elements
+let currentTheme = 'dark';
+
+/**
+ * Inject theme CSS variables for content script UI elements
+ * Matches the popup.css theme system
+ */
+function injectThemeVariables(isLight = false) {
+    currentTheme = isLight ? 'light' : 'dark';
+
+    const darkTheme = `
+        --ir-bg-primary: #0a0a0a;
+        --ir-bg-secondary: #111111;
+        --ir-bg-tertiary: #1a1a1a;
+        --ir-bg-card: rgba(17, 17, 17, 0.85);
+        --ir-border-color: rgba(255, 255, 255, 0.08);
+        --ir-border-hover: rgba(255, 255, 255, 0.15);
+        --ir-text-primary: #fafafa;
+        --ir-text-secondary: #a1a1a1;
+        --ir-text-muted: #737373;
+        --ir-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
+        --ir-shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.6);
+        --ir-glass-bg: rgba(20, 20, 20, 0.8);
+        --ir-glass-border: rgba(255, 255, 255, 0.06);
+        --ir-overlay-bg: rgba(0, 0, 0, 0.9);
+        --ir-scrollbar-track: #111;
+        --ir-scrollbar-thumb: #333;
+        /* TTS-specific dark mode */
+        --ir-tts-bg: rgba(0, 0, 0, 0.95);
+        --ir-tts-border: rgba(255, 255, 255, 0.15);
+        --ir-tts-text: #ffffff;
+        --ir-tts-text-muted: rgba(255, 255, 255, 0.6);
+        --ir-tts-btn-bg: rgba(255, 255, 255, 0.1);
+        --ir-tts-btn-border: rgba(255, 255, 255, 0.2);
+        --ir-tts-btn-hover-bg: rgba(255, 255, 255, 0.2);
+        --ir-tts-btn-hover-border: rgba(255, 255, 255, 0.4);
+    `;
+
+    const lightTheme = `
+        --ir-bg-primary: #ffffff;
+        --ir-bg-secondary: #f8f9fa;
+        --ir-bg-tertiary: #f1f3f5;
+        --ir-bg-card: rgba(255, 255, 255, 0.9);
+        --ir-border-color: rgba(0, 0, 0, 0.08);
+        --ir-border-hover: rgba(0, 0, 0, 0.15);
+        --ir-text-primary: #111827;
+        --ir-text-secondary: #6b7280;
+        --ir-text-muted: #9ca3af;
+        --ir-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+        --ir-shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.12);
+        --ir-glass-bg: rgba(255, 255, 255, 0.85);
+        --ir-glass-border: rgba(0, 0, 0, 0.05);
+        --ir-overlay-bg: rgba(255, 255, 255, 0.95);
+        --ir-scrollbar-track: #f1f3f5;
+        --ir-scrollbar-thumb: #d1d5db;
+        /* TTS-specific light mode */
+        --ir-tts-bg: rgba(255, 255, 255, 0.98);
+        --ir-tts-border: rgba(0, 0, 0, 0.12);
+        --ir-tts-text: #111827;
+        --ir-tts-text-muted: rgba(0, 0, 0, 0.5);
+        --ir-tts-btn-bg: rgba(0, 0, 0, 0.05);
+        --ir-tts-btn-border: rgba(0, 0, 0, 0.1);
+        --ir-tts-btn-hover-bg: rgba(0, 0, 0, 0.1);
+        --ir-tts-btn-hover-border: rgba(0, 0, 0, 0.2);
+    `;
+
+    const css = `:root { ${isLight ? lightTheme : darkTheme} }`;
+    injectCSS(css, 'ir-theme-variables');
+}
+
+/**
+ * Initialize theme system - load preference and listen for changes
+ */
+function initThemeSystem() {
+    // Load initial theme preference
+    chrome.storage.sync.get(['theme'], (result) => {
+        const isLight = result.theme === 'light';
+        injectThemeVariables(isLight);
+    });
+
+    // Listen for theme changes from popup
+    chrome.storage.onChanged.addListener((changes, namespace) => {
+        if (namespace === 'sync' && changes.theme) {
+            const isLight = changes.theme.newValue === 'light';
+            injectThemeVariables(isLight);
+        }
+    });
+}
+
+// Initialize theme system immediately
+initThemeSystem();
 
 // Initialize
 init();
@@ -211,7 +311,7 @@ async function handleMessage(request) {
  */
 async function getAvailableApiConfig() {
     const { apiProvider } = await chrome.storage.sync.get('apiProvider');
-    const preferredProvider = apiProvider || 'openrouter';
+    const preferredProvider = apiProvider || 'gemini';
     const localKeys = await chrome.storage.local.get(['apiKey', 'geminiKey']);
 
     // Try preferred provider first
@@ -1016,11 +1116,11 @@ function injectSelectionDecoderStyles() {
         align-items: center;
         gap: 6px;
         padding: 6px;
-        background: #0a0a0a;
-        border: 1px solid #333;
+        background: var(--ir-bg-primary);
+        border: 1px solid var(--ir-border-hover);
         border-radius: 12px;
         z-index: 10000000;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+        box-shadow: var(--ir-shadow-md);
         opacity: 0;
         transform: translateY(5px);
         transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -1041,7 +1141,7 @@ function injectSelectionDecoderStyles() {
         background: transparent;
         border: 1px solid transparent;
         border-radius: 8px;
-        color: #a1a1a1;
+        color: var(--ir-text-secondary);
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
         font-size: 12px;
         font-weight: 500;
@@ -1050,9 +1150,9 @@ function injectSelectionDecoderStyles() {
     }
     
     .ir-toolbar-btn:hover {
-        background: #1a1a1a;
-        border-color: #333;
-        color: #fafafa;
+        background: var(--ir-bg-tertiary);
+        border-color: var(--ir-border-hover);
+        color: var(--ir-text-primary);
     }
     
     .ir-toolbar-btn svg {
@@ -1082,10 +1182,10 @@ function injectSelectionDecoderStyles() {
     .ir-selection-popup {
         position: absolute;
         width: 320px;
-        background: #0a0a0a;
-        border: 1px solid #262626;
+        background: var(--ir-bg-primary);
+        border: 1px solid var(--ir-border-color);
         border-radius: 14px;
-        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+        box-shadow: var(--ir-shadow-lg);
         z-index: 10000001;
         overflow: hidden;
         opacity: 0;
@@ -1110,7 +1210,7 @@ function injectSelectionDecoderStyles() {
     
     .ir-drag-hint {
         font-size: 12px;
-        color: #444;
+        color: var(--ir-text-muted);
         margin-left: 6px;
         letter-spacing: 2px;
         opacity: 0.6;
@@ -1119,7 +1219,6 @@ function injectSelectionDecoderStyles() {
     
     .ir-draggable-header:hover .ir-drag-hint {
         opacity: 1;
-        color: #666;
     }
     
     .ir-selection-popup-header {
@@ -1127,8 +1226,8 @@ function injectSelectionDecoderStyles() {
         align-items: center;
         justify-content: space-between;
         padding: 14px 16px;
-        background: #111;
-        border-bottom: 1px solid #262626;
+        background: var(--ir-bg-secondary);
+        border-bottom: 1px solid var(--ir-border-color);
     }
     
     .ir-selection-popup-title {
@@ -1150,7 +1249,7 @@ function injectSelectionDecoderStyles() {
         width: 28px;
         height: 28px;
         background: transparent;
-        border: 1px solid #333;
+        border: 1px solid var(--ir-border-hover);
         border-radius: 6px;
         cursor: pointer;
         display: flex;
@@ -1160,13 +1259,13 @@ function injectSelectionDecoderStyles() {
     }
     
     .ir-selection-popup-close:hover {
-        background: #1a1a1a;
+        background: var(--ir-bg-tertiary);
     }
     
     .ir-selection-popup-close svg {
         width: 14px;
         height: 14px;
-        color: #737373;
+        color: var(--ir-text-muted);
     }
     
     .ir-selection-popup-content {
@@ -1177,8 +1276,8 @@ function injectSelectionDecoderStyles() {
     
     .ir-selection-popup-item {
         padding: 10px 12px;
-        background: #111;
-        border: 1px solid #1a1a1a;
+        background: var(--ir-bg-secondary);
+        border: 1px solid var(--ir-bg-tertiary);
         border-radius: 8px;
         margin-bottom: 8px;
     }
@@ -1197,13 +1296,13 @@ function injectSelectionDecoderStyles() {
     }
     
     .ir-term-original {
-        color: #a1a1a1;
+        color: var(--ir-text-secondary);
         text-decoration: line-through;
         text-decoration-color: #ef4444;
     }
     
     .ir-term-arrow {
-        color: #444;
+        color: var(--ir-text-muted);
         font-size: 12px;
     }
     
@@ -1216,23 +1315,23 @@ function injectSelectionDecoderStyles() {
         margin-top: 6px;
         font-family: 'Inter', sans-serif;
         font-size: 12px;
-        color: #737373;
+        color: var(--ir-text-muted);
         line-height: 1.5;
     }
     
     .ir-selection-popup-footer {
         padding: 12px 16px;
-        border-top: 1px solid #262626;
-        background: #0a0a0a;
+        border-top: 1px solid var(--ir-border-color);
+        background: var(--ir-bg-primary);
     }
     
     .ir-selection-popup-clear {
         width: 100%;
         padding: 10px;
         background: transparent;
-        border: 1px solid #333;
+        border: 1px solid var(--ir-border-hover);
         border-radius: 8px;
-        color: #a1a1a1;
+        color: var(--ir-text-secondary);
         font-family: 'Inter', sans-serif;
         font-size: 12px;
         font-weight: 500;
@@ -1241,9 +1340,9 @@ function injectSelectionDecoderStyles() {
     }
     
     .ir-selection-popup-clear:hover {
-        background: #1a1a1a;
-        color: #fafafa;
-        border-color: #444;
+        background: var(--ir-bg-tertiary);
+        color: var(--ir-text-primary);
+        border-color: var(--ir-border-hover);
     }
     
     /* Popup scrollbar */
@@ -1252,11 +1351,11 @@ function injectSelectionDecoderStyles() {
     }
     
     .ir-selection-popup-content::-webkit-scrollbar-track {
-        background: #111;
+        background: var(--ir-scrollbar-track);
     }
     
     .ir-selection-popup-content::-webkit-scrollbar-thumb {
-        background: #333;
+        background: var(--ir-scrollbar-thumb);
         border-radius: 3px;
     }
     
@@ -1264,10 +1363,10 @@ function injectSelectionDecoderStyles() {
     .ir-simplify-popup {
         position: absolute;
         width: 360px;
-        background: #0a0a0a;
-        border: 1px solid #262626;
+        background: var(--ir-bg-primary);
+        border: 1px solid var(--ir-border-color);
         border-radius: 14px;
-        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+        box-shadow: var(--ir-shadow-lg);
         z-index: 10000001;
         overflow: hidden;
         opacity: 0;
@@ -1285,8 +1384,8 @@ function injectSelectionDecoderStyles() {
         align-items: center;
         justify-content: space-between;
         padding: 14px 16px;
-        background: #111;
-        border-bottom: 1px solid #262626;
+        background: var(--ir-bg-secondary);
+        border-bottom: 1px solid var(--ir-border-color);
     }
     
     .ir-simplify-popup-title {
@@ -1315,7 +1414,7 @@ function injectSelectionDecoderStyles() {
         width: 28px;
         height: 28px;
         background: transparent;
-        border: 1px solid #333;
+        border: 1px solid var(--ir-border-hover);
         border-radius: 6px;
         cursor: pointer;
         display: flex;
@@ -1326,14 +1425,14 @@ function injectSelectionDecoderStyles() {
     
     .ir-simplify-copy:hover,
     .ir-simplify-popup-close:hover {
-        background: #1a1a1a;
+        background: var(--ir-bg-tertiary);
     }
     
     .ir-simplify-copy svg,
     .ir-simplify-popup-close svg {
         width: 14px;
         height: 14px;
-        color: #737373;
+        color: var(--ir-text-muted);
     }
     
     .ir-simplify-popup-content {
@@ -1346,14 +1445,14 @@ function injectSelectionDecoderStyles() {
         font-family: 'Inter', sans-serif;
         font-size: 14px;
         line-height: 1.7;
-        color: #e5e5e5;
+        color: var(--ir-text-primary);
         white-space: pre-wrap;
     }
     
     .ir-simplify-meta {
         margin-top: 14px;
         padding-top: 12px;
-        border-top: 1px solid #262626;
+        border-top: 1px solid var(--ir-border-color);
     }
     
     .ir-simplify-level {
@@ -1362,7 +1461,7 @@ function injectSelectionDecoderStyles() {
         gap: 8px;
         font-family: 'Inter', sans-serif;
         font-size: 12px;
-        color: #737373;
+        color: var(--ir-text-muted);
     }
     
     .ir-simplify-level svg {
@@ -1373,8 +1472,8 @@ function injectSelectionDecoderStyles() {
     .ir-simplify-changes {
         margin-top: 12px;
         padding: 10px 12px;
-        background: #111;
-        border: 1px solid #1a1a1a;
+        background: var(--ir-bg-secondary);
+        border: 1px solid var(--ir-bg-tertiary);
         border-radius: 8px;
     }
     
@@ -1382,7 +1481,7 @@ function injectSelectionDecoderStyles() {
         font-family: 'Inter', sans-serif;
         font-size: 11px;
         font-weight: 600;
-        color: #737373;
+        color: var(--ir-text-muted);
         text-transform: uppercase;
         letter-spacing: 0.5px;
         margin-bottom: 8px;
@@ -1396,7 +1495,7 @@ function injectSelectionDecoderStyles() {
     .ir-simplify-changes li {
         font-family: 'Inter', sans-serif;
         font-size: 12px;
-        color: #a1a1a1;
+        color: var(--ir-text-secondary);
         line-height: 1.6;
         margin-bottom: 4px;
     }
@@ -1407,8 +1506,8 @@ function injectSelectionDecoderStyles() {
     
     .ir-simplify-popup-footer {
         padding: 12px 16px;
-        border-top: 1px solid #262626;
-        background: #0a0a0a;
+        border-top: 1px solid var(--ir-border-color);
+        background: var(--ir-bg-primary);
     }
     
     .ir-simplify-replace {
@@ -1417,7 +1516,7 @@ function injectSelectionDecoderStyles() {
         background: #22c55e;
         border: none;
         border-radius: 8px;
-        color: #0a0a0a;
+        color: white;
         font-family: 'Inter', sans-serif;
         font-size: 13px;
         font-weight: 600;
@@ -1436,11 +1535,11 @@ function injectSelectionDecoderStyles() {
     }
     
     .ir-simplify-popup-content::-webkit-scrollbar-track {
-        background: #111;
+        background: var(--ir-scrollbar-track);
     }
     
     .ir-simplify-popup-content::-webkit-scrollbar-thumb {
-        background: #333;
+        background: var(--ir-scrollbar-thumb);
         border-radius: 3px;
     }
     `;
@@ -1850,9 +1949,9 @@ function injectJargonStyles() {
       bottom: calc(100% + 8px);
       left: 50%;
       transform: translateX(-50%) translateY(0);
-      background: #0a0a0a;
-      border: 1px solid #333;
-      color: #fafafa;
+      background: var(--ir-bg-primary);
+      border: 1px solid var(--ir-border-hover);
+      color: var(--ir-text-primary);
       padding: 12px 16px;
       border-radius: 10px;
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -1864,7 +1963,7 @@ function injectJargonStyles() {
       white-space: normal;
       text-align: left;
       z-index: 1000000;
-      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+      box-shadow: var(--ir-shadow-lg);
       pointer-events: none;
       opacity: 0;
       visibility: hidden;
@@ -1885,7 +1984,7 @@ function injectJargonStyles() {
       left: 50%;
       transform: translateX(-50%);
       border: 7px solid transparent;
-      border-top-color: #333;
+      border-top-color: var(--ir-border-hover);
       z-index: 1000001;
       opacity: 0;
       visibility: hidden;
@@ -1922,8 +2021,8 @@ function injectJargonStyles() {
       left: 24px;
       width: 48px;
       height: 48px;
-      background: #111;
-      border: 1px solid #333;
+      background: var(--ir-bg-secondary);
+      border: 1px solid var(--ir-border-hover);
       border-radius: 50%;
       display: flex;
       align-items: center;
@@ -1936,21 +2035,21 @@ function injectJargonStyles() {
     
     .ir-glossary-toggle:hover {
       transform: scale(1.1);
-      background: #1a1a1a;
+      background: var(--ir-bg-tertiary);
     }
     
     .ir-glossary-toggle svg {
       width: 22px;
       height: 22px;
-      color: #fafafa;
+      color: var(--ir-text-primary);
     }
     
     .ir-glossary-toggle .ir-badge {
       position: absolute;
       top: -4px;
       right: -4px;
-      background: #fafafa;
-      color: #0a0a0a;
+      background: var(--ir-text-primary);
+      color: var(--ir-bg-primary);
       font-size: 11px;
       font-weight: 700;
       padding: 2px 6px;
@@ -1965,10 +2064,10 @@ function injectJargonStyles() {
       left: 24px;
       width: 340px;
       max-height: 450px;
-      background: #0a0a0a;
-      border: 1px solid #262626;
+      background: var(--ir-bg-primary);
+      border: 1px solid var(--ir-border-color);
       border-radius: 16px;
-      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+      box-shadow: var(--ir-shadow-lg);
       z-index: 999998;
       overflow: hidden;
       display: none;
@@ -1992,7 +2091,7 @@ function injectJargonStyles() {
     
     .ir-glossary-header {
       padding: 16px 20px;
-      border-bottom: 1px solid #262626;
+      border-bottom: 1px solid var(--ir-border-color);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -2002,7 +2101,7 @@ function injectJargonStyles() {
       font-family: 'Inter', sans-serif;
       font-size: 15px;
       font-weight: 600;
-      color: #fafafa;
+      color: var(--ir-text-primary);
       display: flex;
       align-items: center;
       gap: 10px;
@@ -2017,7 +2116,7 @@ function injectJargonStyles() {
       width: 28px;
       height: 28px;
       background: transparent;
-      border: 1px solid #333;
+      border: 1px solid var(--ir-border-hover);
       border-radius: 6px;
       cursor: pointer;
       display: flex;
@@ -2027,13 +2126,13 @@ function injectJargonStyles() {
     }
     
     .ir-glossary-close:hover {
-      background: #1a1a1a;
+      background: var(--ir-bg-tertiary);
     }
     
     .ir-glossary-close svg {
       width: 14px;
       height: 14px;
-      color: #737373;
+      color: var(--ir-text-muted);
     }
     
     .ir-glossary-content {
@@ -2044,16 +2143,16 @@ function injectJargonStyles() {
     
     .ir-glossary-item {
       padding: 12px 14px;
-      background: #111;
-      border: 1px solid #1a1a1a;
+      background: var(--ir-bg-secondary);
+      border: 1px solid var(--ir-bg-tertiary);
       border-radius: 10px;
       margin-bottom: 8px;
       transition: all 0.2s;
     }
     
     .ir-glossary-item:hover {
-      border-color: #333;
-      background: #141414;
+      border-color: var(--ir-border-hover);
+      background: var(--ir-bg-tertiary);
     }
     
     .ir-glossary-item:last-child {
@@ -2064,7 +2163,7 @@ function injectJargonStyles() {
       font-family: 'Inter', sans-serif;
       font-size: 14px;
       font-weight: 600;
-      color: #fafafa;
+      color: var(--ir-text-primary);
       margin-bottom: 4px;
       display: flex;
       align-items: center;
@@ -2098,7 +2197,7 @@ function injectJargonStyles() {
     .ir-glossary-explanation {
       font-family: 'Inter', sans-serif;
       font-size: 12px;
-      color: #737373;
+      color: var(--ir-text-muted);
       line-height: 1.5;
     }
     
@@ -2108,11 +2207,11 @@ function injectJargonStyles() {
     }
     
     .ir-glossary-content::-webkit-scrollbar-track {
-      background: #111;
+      background: var(--ir-scrollbar-track);
     }
     
     .ir-glossary-content::-webkit-scrollbar-thumb {
-      background: #333;
+      background: var(--ir-scrollbar-thumb);
       border-radius: 3px;
     }
   `;
@@ -2624,12 +2723,12 @@ function injectTTSControlStyles() {
             position: fixed;
             bottom: 20px;
             right: 20px;
-            background: rgba(0, 0, 0, 0.95);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: var(--ir-tts-bg);
+            border: 1px solid var(--ir-tts-border);
             border-radius: 12px;
             padding: 16px;
             z-index: 10000000;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+            box-shadow: var(--ir-shadow-md);
             backdrop-filter: blur(10px);
             min-width: 220px;
         }
@@ -2640,11 +2739,11 @@ function injectTTSControlStyles() {
             align-items: center;
             margin-bottom: 12px;
             padding-bottom: 10px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            border-bottom: 1px solid var(--ir-tts-border);
         }
         
         .ir-tts-title {
-            color: #fff;
+            color: var(--ir-tts-text);
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             font-size: 13px;
             font-weight: 600;
@@ -2653,7 +2752,7 @@ function injectTTSControlStyles() {
         .ir-tts-close {
             background: none;
             border: none;
-            color: rgba(255, 255, 255, 0.6);
+            color: var(--ir-tts-text-muted);
             font-size: 24px;
             line-height: 1;
             cursor: pointer;
@@ -2667,7 +2766,7 @@ function injectTTSControlStyles() {
         }
         
         .ir-tts-close:hover {
-            color: #fff;
+            color: var(--ir-tts-text);
         }
         
         .ir-tts-buttons {
@@ -2678,8 +2777,8 @@ function injectTTSControlStyles() {
         }
         
         .ir-tts-btn {
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: var(--ir-tts-btn-bg);
+            border: 1px solid var(--ir-tts-btn-border);
             border-radius: 8px;
             padding: 10px;
             cursor: pointer;
@@ -2694,12 +2793,12 @@ function injectTTSControlStyles() {
         .ir-tts-btn svg {
             width: 20px;
             height: 20px;
-            color: #fff;
+            color: var(--ir-tts-text);
         }
         
         .ir-tts-btn:hover {
-            background: rgba(255, 255, 255, 0.2);
-            border-color: rgba(255, 255, 255, 0.4);
+            background: var(--ir-tts-btn-hover-bg);
+            border-color: var(--ir-tts-btn-hover-border);
             transform: translateY(-2px);
         }
         
@@ -2712,16 +2811,16 @@ function injectTTSControlStyles() {
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            background: rgba(0, 0, 0, 0.9);
-            color: #fff;
+            background: var(--ir-tts-bg);
+            color: var(--ir-tts-text);
             padding: 24px 48px;
             border-radius: 16px;
             font-size: 32px;
             font-weight: 600;
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             z-index: 10000001;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
-            border: 2px solid rgba(255, 255, 255, 0.2);
+            box-shadow: var(--ir-shadow-lg);
+            border: 2px solid var(--ir-tts-border);
             backdrop-filter: blur(10px);
             display: none;
             align-items: center;
@@ -2740,6 +2839,22 @@ function injectTTSControlStyles() {
                 transform: translate(-50%, -50%) scale(1);
                 opacity: 1;
             }
+        }
+        
+        /* DOM Word Highlighting Styles */
+        .ir-tts-word {
+            display: inline;
+            transition: background-color 0.15s ease, box-shadow 0.15s ease;
+            border-radius: 2px;
+            padding: 0 1px;
+        }
+        
+        .ir-tts-word-active {
+            background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+            color: #000 !important;
+            box-shadow: 0 2px 8px rgba(251, 191, 36, 0.5);
+            padding: 1px 3px;
+            margin: 0 -2px;
         }
     `;
 
@@ -2951,7 +3066,7 @@ function playTTSSelection() {
         return;
     }
 
-    // Get selected text
+    // Get selected text and selection range
     const selection = window.getSelection();
     const selectedText = selection.toString().trim();
 
@@ -2967,6 +3082,11 @@ function playTTSSelection() {
 
     // Cancel any existing speech
     ttsEngine.cancel();
+
+    // Store selection range for DOM highlighting
+    if (selection.rangeCount > 0) {
+        state.ttsState.selectionRange = selection.getRangeAt(0).cloneRange();
+    }
 
     // Prepare text
     let textToRead = selectedText;
@@ -2984,20 +3104,27 @@ function playTTSSelection() {
     state.ttsState.textContent = textToRead;
     state.ttsState.words = textToRead.split(/\s+/).filter(w => w.trim().length > 0);
     state.ttsState.currentWordIndex = 0;
+    state.ttsState.boundaryFired = false;
+    state.ttsState.useTimeFallback = false;
+
+    // Prepare DOM for word highlighting if enabled
+    if (state.ttsSettings.wordHighlight && state.ttsState.selectionRange) {
+        prepareSelectionForHighlighting();
+    }
 
     const utterance = new SpeechSynthesisUtterance(textToRead);
 
     // Ensure valid rate (0.1 to 10)
     utterance.rate = Math.max(0.1, Math.min(10, state.ttsSettings.speed || 1));
     utterance.pitch = 1;
-    utterance.volume = Math.max(0, Math.min(1, state.ttsSettings.volume || 0.7)); // Use volume from settings
+    utterance.volume = Math.max(0, Math.min(1, state.ttsSettings.volume || 0.7));
     utterance.lang = 'en-US';
 
-    // Get available voices and select voice (same logic as playTTS)
+    // Get available voices and select voice
     const voices = ttsEngine.getVoices();
-    if (voices.length > 0) {
-        let selectedVoice = null;
+    let selectedVoice = null;
 
+    if (voices.length > 0) {
         // Priority 1: Use user-selected voice if set
         if (state.ttsSettings.voice && state.ttsSettings.voice !== 'auto') {
             selectedVoice = voices.find(v => v.name === state.ttsSettings.voice);
@@ -3034,11 +3161,17 @@ function playTTSSelection() {
         }
     }
 
-    // Word boundary event for highlighting
+    // Word boundary event for highlighting (works with Microsoft/local voices)
     if (state.ttsSettings.wordHighlight) {
         utterance.onboundary = (event) => {
             if (event.name === 'word') {
-                highlightCurrentWord(event.charIndex);
+                state.ttsState.boundaryFired = true;
+                // Stop time fallback if boundary events are working
+                if (state.ttsState.highlightIntervalId) {
+                    clearInterval(state.ttsState.highlightIntervalId);
+                    state.ttsState.highlightIntervalId = null;
+                }
+                highlightWordByCharIndex(event.charIndex);
             }
         };
     }
@@ -3046,13 +3179,26 @@ function playTTSSelection() {
     utterance.onstart = () => {
         state.ttsState.isPlaying = true;
         state.ttsState.isPaused = false;
+        state.ttsState.speechStartTime = Date.now();
         showNotification('Reading selection...', 'info');
+
+        // Start time-based fallback after a short delay to check if boundary events work
+        if (state.ttsSettings.wordHighlight) {
+            setTimeout(() => {
+                if (!state.ttsState.boundaryFired && state.ttsState.isPlaying && !state.ttsState.isPaused) {
+                    console.log('TTS: No boundary events detected, using time-based highlighting');
+                    state.ttsState.useTimeFallback = true;
+                    startTimeBasedHighlighting();
+                }
+            }, 300);
+        }
     };
 
     utterance.onend = () => {
         state.ttsState.isPlaying = false;
         state.ttsState.isPaused = false;
         state.ttsState.currentUtterance = null;
+        stopTimeBasedHighlighting();
         clearTTSHighlight();
         showNotification('Reading complete', 'success');
     };
@@ -3064,11 +3210,11 @@ function playTTSSelection() {
         state.ttsState.isPlaying = false;
         state.ttsState.isPaused = false;
         state.ttsState.currentUtterance = null;
+        stopTimeBasedHighlighting();
         clearTTSHighlight();
 
         // Don't show error notifications for expected interruptions
         if (event.error === 'canceled' || event.error === 'interrupted') {
-            // These are expected when user stops TTS, don't show error
             return;
         }
 
@@ -3106,6 +3252,9 @@ function pauseTTS() {
 }
 
 function stopTTS() {
+    // Stop time-based highlighting first
+    stopTimeBasedHighlighting();
+
     if (ttsEngine) {
         try {
             // Cancel all pending utterances
@@ -3130,6 +3279,8 @@ function stopTTS() {
     state.ttsState.textContent = '';
     state.ttsState.chunks = [];
     state.ttsState.currentChunkIndex = 0;
+    state.ttsState.boundaryFired = false;
+    state.ttsState.useTimeFallback = false;
 
     clearTTSHighlight();
     showNotification('Speech stopped', 'info');
@@ -3177,7 +3328,73 @@ function extractReadableContent() {
 }
 
 function highlightCurrentWord(charIndex) {
-    // Find the word at this character index
+    // Legacy function - redirects to new implementation
+    highlightWordByCharIndex(charIndex);
+}
+
+/**
+ * Prepare the selected text in DOM for word-by-word highlighting
+ * Wraps each word in a span element that can be individually highlighted
+ */
+function prepareSelectionForHighlighting() {
+    const range = state.ttsState.selectionRange;
+    if (!range) return;
+
+    try {
+        // Clear any previous word spans
+        cleanupDOMHighlighting();
+
+        // Get the common ancestor container
+        const container = range.commonAncestorContainer;
+        const isTextNode = container.nodeType === Node.TEXT_NODE;
+
+        // For simple text selections within a single element
+        if (isTextNode || (container.childNodes.length === 1 && container.firstChild.nodeType === Node.TEXT_NODE)) {
+            const textNode = isTextNode ? container : container.firstChild;
+            const text = range.toString();
+            const words = text.split(/(\s+)/);
+
+            // Create a document fragment with wrapped words
+            const fragment = document.createDocumentFragment();
+            const wordSpans = [];
+
+            words.forEach((part, index) => {
+                if (part.trim()) {
+                    // It's a word - wrap in span
+                    const span = document.createElement('span');
+                    span.className = 'ir-tts-word';
+                    span.textContent = part;
+                    span.dataset.ttsWordIndex = wordSpans.length;
+                    wordSpans.push(span);
+                    fragment.appendChild(span);
+                } else if (part) {
+                    // It's whitespace - keep as text
+                    fragment.appendChild(document.createTextNode(part));
+                }
+            });
+
+            // Replace the selected range with the wrapped words
+            range.deleteContents();
+            range.insertNode(fragment);
+
+            state.ttsState.wordSpans = wordSpans;
+            console.log('TTS DOM Highlighting: Prepared', wordSpans.length, 'words for highlighting');
+        } else {
+            // For complex selections across multiple nodes, use a simpler approach
+            // Just mark the selection area and use floating indicator
+            console.log('TTS: Complex selection, using floating indicator');
+            state.ttsState.wordSpans = [];
+        }
+    } catch (error) {
+        console.error('Error preparing selection for highlighting:', error);
+        state.ttsState.wordSpans = [];
+    }
+}
+
+/**
+ * Highlight word by character index (from onboundary event)
+ */
+function highlightWordByCharIndex(charIndex) {
     let currentIndex = 0;
     let wordIndex = 0;
     const words = state.ttsState.words;
@@ -3190,29 +3407,146 @@ function highlightCurrentWord(charIndex) {
         currentIndex += words[i].length + 1; // +1 for space
     }
 
-    state.ttsState.currentWordIndex = wordIndex;
-
-    // Visual highlighting (simplified - highlights entire viewport)
-    clearTTSHighlight();
-
-    // Create a floating highlight indicator
-    let indicator = document.getElementById('ir-tts-indicator');
-    if (!indicator) {
-        indicator = document.createElement('div');
-        indicator.id = 'ir-tts-indicator';
-        indicator.className = 'ir-tts-indicator';
-        document.body.appendChild(indicator);
-    }
-
-    const currentWord = words[wordIndex];
-    indicator.textContent = currentWord;
-    indicator.style.display = 'flex';
+    highlightWordByIndex(wordIndex);
 }
 
-function clearTTSHighlight() {
+/**
+ * Highlight word by index
+ */
+function highlightWordByIndex(wordIndex) {
+    state.ttsState.currentWordIndex = wordIndex;
+    const words = state.ttsState.words;
+    const wordSpans = state.ttsState.wordSpans;
+
+    // Clear previous highlight
+    clearActiveWordHighlight();
+
+    // If we have DOM word spans, highlight directly in DOM
+    if (wordSpans && wordSpans.length > 0 && wordIndex < wordSpans.length) {
+        const activeSpan = wordSpans[wordIndex];
+        if (activeSpan) {
+            activeSpan.classList.add('ir-tts-word-active');
+
+            // Scroll the word into view smoothly
+            activeSpan.scrollIntoView({
+                behavior: 'smooth',
+                block: 'center',
+                inline: 'nearest'
+            });
+        }
+    } else {
+        // Fallback: Show floating indicator for complex selections or page reading
+        let indicator = document.getElementById('ir-tts-indicator');
+        if (!indicator) {
+            indicator = document.createElement('div');
+            indicator.id = 'ir-tts-indicator';
+            indicator.className = 'ir-tts-indicator';
+            document.body.appendChild(indicator);
+        }
+
+        if (wordIndex < words.length) {
+            const currentWord = words[wordIndex];
+            indicator.textContent = currentWord;
+            indicator.style.display = 'flex';
+        }
+    }
+}
+
+/**
+ * Clear active word highlighting without removing the spans
+ */
+function clearActiveWordHighlight() {
+    // Clear DOM word highlights
+    const activeWords = document.querySelectorAll('.ir-tts-word-active');
+    activeWords.forEach(el => el.classList.remove('ir-tts-word-active'));
+
+    // Hide floating indicator
     const indicator = document.getElementById('ir-tts-indicator');
     if (indicator) {
         indicator.style.display = 'none';
+    }
+}
+
+/**
+ * Start time-based word highlighting (fallback for voices without onboundary)
+ * Uses estimated word timing based on speech rate
+ */
+function startTimeBasedHighlighting() {
+    if (state.ttsState.highlightIntervalId) {
+        clearInterval(state.ttsState.highlightIntervalId);
+    }
+
+    const words = state.ttsState.words;
+    if (!words || words.length === 0) return;
+
+    // Estimate words per minute based on speech rate (base: 150 WPM at rate 1.0)
+    const rate = state.ttsSettings.speed || 1;
+    const wordsPerMinute = 150 * rate;
+    const msPerWord = 60000 / wordsPerMinute;
+
+    let currentIndex = 0;
+    state.ttsState.speechStartTime = Date.now();
+
+    // Highlight first word immediately
+    highlightWordByIndex(0);
+
+    state.ttsState.highlightIntervalId = setInterval(() => {
+        if (!state.ttsState.isPlaying || state.ttsState.isPaused) {
+            return;
+        }
+
+        const elapsedMs = Date.now() - state.ttsState.speechStartTime;
+        const expectedWordIndex = Math.floor(elapsedMs / msPerWord);
+
+        if (expectedWordIndex > currentIndex && expectedWordIndex < words.length) {
+            currentIndex = expectedWordIndex;
+            highlightWordByIndex(currentIndex);
+        }
+
+        // Stop if we've reached the end
+        if (expectedWordIndex >= words.length) {
+            stopTimeBasedHighlighting();
+        }
+    }, 50); // Check frequently for smoother transitions
+}
+
+/**
+ * Stop time-based word highlighting
+ */
+function stopTimeBasedHighlighting() {
+    if (state.ttsState.highlightIntervalId) {
+        clearInterval(state.ttsState.highlightIntervalId);
+        state.ttsState.highlightIntervalId = null;
+    }
+}
+
+/**
+ * Remove all DOM word highlighting and restore original text
+ */
+function cleanupDOMHighlighting() {
+    const wordSpans = document.querySelectorAll('.ir-tts-word');
+    wordSpans.forEach(span => {
+        const text = span.textContent;
+        span.replaceWith(document.createTextNode(text));
+    });
+    state.ttsState.wordSpans = [];
+    state.ttsState.selectionRange = null;
+}
+
+function clearTTSHighlight() {
+    // Stop time-based highlighting
+    stopTimeBasedHighlighting();
+
+    // Clear active highlights
+    clearActiveWordHighlight();
+
+    // Cleanup DOM word spans
+    cleanupDOMHighlighting();
+
+    // Remove floating indicator
+    const indicator = document.getElementById('ir-tts-indicator');
+    if (indicator) {
+        indicator.remove();
     }
 }
 
@@ -3254,7 +3588,7 @@ function showProgressLoader(text = 'Processing...', feature = 'jargon') {
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0, 0, 0, 0.9);
+            background: var(--ir-overlay-bg);
             backdrop-filter: blur(10px);
             display: flex;
             flex-direction: column;
@@ -3280,7 +3614,7 @@ function showProgressLoader(text = 'Processing...', feature = 'jargon') {
             font-family: "Inter", sans-serif;
             font-size: 1.2em;
             font-weight: 300;
-            color: white;
+            color: var(--ir-text-primary);
             border-radius: 50%;
             background-color: transparent;
             user-select: none;
@@ -3362,7 +3696,7 @@ function showProgressLoader(text = 'Processing...', feature = 'jargon') {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             font-size: 14px;
             font-weight: 400;
-            color: rgba(255, 255, 255, 0.5);
+            color: var(--ir-text-secondary);
             letter-spacing: 0.3px;
             text-align: center;
         }
@@ -3485,14 +3819,14 @@ function showNotification(message, type = 'info') {
             position: fixed;
             bottom: 24px;
             right: 24px;
-            background: #111111;
+            background: var(--ir-bg-secondary);
             border: 1px solid ${color.border};
             border-radius: 12px;
             padding: 14px 18px;
             display: flex;
             align-items: center;
             gap: 12px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            box-shadow: var(--ir-shadow-md);
             z-index: 10000001;
             animation: ir-notif-in 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             max-width: 360px;

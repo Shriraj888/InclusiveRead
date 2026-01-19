@@ -11,7 +11,7 @@ async function getApiConfig() {
     const sync = await chrome.storage.sync.get(['apiProvider']);
     const local = await chrome.storage.local.get(['apiKey', 'geminiKey']);
 
-    const provider = sync.apiProvider || 'openrouter';
+    const provider = sync.apiProvider || 'gemini';
     const apiKey = provider === 'gemini' ? local.geminiKey : local.apiKey;
 
     return { provider, apiKey };
@@ -63,14 +63,19 @@ async function callOpenRouter(messages, apiKey) {
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
-            console.error('OpenRouter API error:', errorData);
-            throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+            console.error('OpenRouter API error:', JSON.stringify(errorData));
+            // Handle various error response formats
+            const errorMsg = errorData.error?.message
+                || errorData.message
+                || (typeof errorData.error === 'string' ? errorData.error : null)
+                || `HTTP ${response.status}: ${response.statusText}`;
+            throw new Error(errorMsg);
         }
 
         const data = await response.json();
         return data.choices?.[0]?.message?.content || '';
     } catch (error) {
-        console.error('OpenRouter API error:', error);
+        console.error('OpenRouter API error:', error.message || error);
         throw error;
     }
 }
@@ -102,14 +107,19 @@ async function callGemini(messages, apiKey) {
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
-            console.error('Gemini API error:', errorData);
-            throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+            console.error('Gemini API error:', JSON.stringify(errorData));
+            // Handle various error response formats
+            const errorMsg = errorData.error?.message
+                || errorData.message
+                || (typeof errorData.error === 'string' ? errorData.error : null)
+                || `HTTP ${response.status}: ${response.statusText}`;
+            throw new Error(errorMsg);
         }
 
         const data = await response.json();
         return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     } catch (error) {
-        console.error('Gemini API error:', error);
+        console.error('Gemini API error:', error.message || error);
         throw error;
     }
 }

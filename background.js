@@ -98,12 +98,30 @@ chrome.runtime.onInstalled.addListener((details) => {
             ttsEnabled: false,
             ttsSpeed: 1,
             ttsPauseOnPunctuation: true,
-            ttsWordHighlight: true
+            ttsWordHighlight: true,
+
+            apiProvider: 'gemini'  // Default to Gemini for new installs
         });
 
-        // Open welcome page or settings
+        // Open welcome page - redirect to installation guide
         chrome.tabs.create({
-            url: 'https://openrouter.ai/keys'
+            url: 'https://inclusive-read.vercel.app/#installation'
+        });
+    }
+
+    // Migration for existing users on update
+    if (details.reason === 'update') {
+        chrome.storage.local.get(['apiKey', 'geminiKey'], (localResult) => {
+            chrome.storage.sync.get(['apiProvider'], (syncResult) => {
+                const hasOpenRouterKey = !!localResult.apiKey;
+                const hasGeminiKey = !!localResult.geminiKey;
+
+                // If user has Gemini key but not OpenRouter, or no keys at all, default to Gemini
+                if (!hasOpenRouterKey) {
+                    chrome.storage.sync.set({ apiProvider: 'gemini' });
+                    console.log('InclusiveRead: Migrated to Gemini provider');
+                }
+            });
         });
     }
 });

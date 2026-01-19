@@ -63,7 +63,8 @@ chrome.storage.sync.get([
   'theme',
   'popupSize',
   'apiProvider',
-  'ttsVoice'
+  'ttsVoice',
+  'tourCompleted'
 ], (result) => {
   jargonToggle.checked = result.jargonEnabled || false;
   sensoryToggle.checked = result.sensoryEnabled || false;
@@ -85,8 +86,8 @@ chrome.storage.sync.get([
   ttsVolume.value = result.ttsVolume !== undefined ? result.ttsVolume : 70;
   ttsVolumeValue.textContent = (result.ttsVolume !== undefined ? result.ttsVolume : 70) + '%';
 
-  // API Provider
-  const selectedProvider = result.apiProvider || 'openrouter';
+  // API Provider - Default to Gemini for new users
+  const selectedProvider = result.apiProvider || 'gemini';
   apiProvider.value = selectedProvider;
 
   // Update badge directly
@@ -98,8 +99,8 @@ chrome.storage.sync.get([
   // Show/hide correct key sections
   const openrouterSection = document.getElementById('openrouterSection');
   const geminiSection = document.getElementById('geminiSection');
-  if (openrouterSection) openrouterSection.style.display = selectedProvider === 'openrouter' ? 'block' : 'none';
   if (geminiSection) geminiSection.style.display = selectedProvider === 'gemini' ? 'block' : 'none';
+  if (openrouterSection) openrouterSection.style.display = selectedProvider === 'openrouter' ? 'block' : 'none';
 
   updateRangeValues();
 
@@ -113,6 +114,11 @@ chrome.storage.sync.get([
 
   // Populate TTS voices
   populateTTSVoices(result.ttsVoice);
+
+  // Check if tour should be shown (first time users)
+  if (!result.tourCompleted) {
+    setTimeout(() => startTour(), 500);
+  }
 });
 
 // Load API keys separately from LOCAL storage (privacy-first)
@@ -620,3 +626,182 @@ function populateTTSVoices(selectedVoice) {
     ttsVoiceSelect.appendChild(option);
   });
 }
+
+// ==========================================
+// ONBOARDING TOUR SYSTEM
+// ==========================================
+
+const tourSteps = [
+  {
+    target: '.logo',
+    title: 'Welcome to InclusiveRead! 👋',
+    content: 'Your AI-powered cognitive bridge for easier web reading. Let\'s take a quick tour of the features.',
+    position: 'bottom'
+  },
+  {
+    target: '.feature-card:nth-child(1)',
+    title: 'Jargon Decoder 📖',
+    content: 'Simplifies complex terminology on any webpage.',
+    position: 'bottom'
+  },
+  {
+    target: '.feature-card:nth-child(2)',
+    title: 'Sensory Shield 🛡️',
+    content: 'Freezes distracting GIFs and animations.',
+    position: 'bottom'
+  },
+  {
+    target: '.feature-card:nth-child(3)',
+    title: 'Dyslexia Reading Mode 📚',
+    content: 'Optimized fonts and spacing for easier reading.',
+    position: 'bottom'
+  },
+  {
+    target: '.feature-card:nth-child(4)',
+    title: 'Text-to-Speech 🔊',
+    content: 'Listen to any webpage with word highlighting.',
+    position: 'bottom'
+  },
+  {
+    target: '.settings-btn',
+    title: 'API Configuration ⚙️',
+    content: 'Set up your free Gemini API key here.',
+    position: 'top'
+  }
+];
+
+let currentTourStep = 0;
+const tourOverlay = document.getElementById('tourOverlay');
+const tourSpotlight = document.getElementById('tourSpotlight');
+const tourTooltip = document.getElementById('tourTooltip');
+const tourArrow = document.getElementById('tourArrow');
+const restartTourBtn = document.getElementById('restartTour');
+
+function startTour() {
+  currentTourStep = 0;
+  tourOverlay.classList.add('active');
+  showTourStep(currentTourStep);
+}
+
+function showTourStep(stepIndex) {
+  const step = tourSteps[stepIndex];
+  const targetElement = document.querySelector(step.target);
+
+  if (!targetElement) {
+    nextTourStep();
+    return;
+  }
+
+  // Position spotlight
+  const rect = targetElement.getBoundingClientRect();
+  const padding = 8;
+
+  tourSpotlight.style.display = 'block';
+  tourSpotlight.style.left = `${rect.left - padding}px`;
+  tourSpotlight.style.top = `${rect.top - padding}px`;
+  tourSpotlight.style.width = `${rect.width + padding * 2}px`;
+  tourSpotlight.style.height = `${rect.height + padding * 2}px`;
+
+  // Create tooltip content
+  const isLastStep = stepIndex === tourSteps.length - 1;
+  const dotsHtml = tourSteps.map((_, i) =>
+    `<div class="tour-dot ${i === stepIndex ? 'active' : ''}"></div>`
+  ).join('');
+
+  tourTooltip.innerHTML = `
+    <div class="tour-step-counter">Step ${stepIndex + 1} of ${tourSteps.length}</div>
+    <h4>${step.title}</h4>
+    <p>${step.content}</p>
+    <div class="tour-nav">
+      <button class="tour-btn skip" data-action="skip">Skip</button>
+      <div class="tour-dots">${dotsHtml}</div>
+      ${isLastStep
+      ? '<button class="tour-btn finish" data-action="finish">Get Started!</button>'
+      : '<button class="tour-btn next" data-action="next">Next</button>'
+    }
+    </div>
+  `;
+
+  // Attach event listeners (CSP-compliant - no inline onclick)
+  tourTooltip.querySelector('[data-action="skip"]')?.addEventListener('click', () => endTour());
+  tourTooltip.querySelector('[data-action="next"]')?.addEventListener('click', () => nextTourStep());
+  tourTooltip.querySelector('[data-action="finish"]')?.addEventListener('click', () => endTour(true));
+
+  // Position tooltip
+  tourTooltip.style.display = 'block';
+  positionTooltip(rect, step.position);
+}
+
+function positionTooltip(targetRect, position) {
+  const tooltipRect = tourTooltip.getBoundingClientRect();
+  const gap = 16;
+  let left, top;
+
+  switch (position) {
+    case 'bottom':
+      left = targetRect.left + (targetRect.width / 2) - (tooltipRect.width / 2);
+      top = targetRect.bottom + gap;
+      break;
+    case 'top':
+      left = targetRect.left + (targetRect.width / 2) - (tooltipRect.width / 2);
+      top = targetRect.top - tooltipRect.height - gap;
+      break;
+    case 'right':
+      left = targetRect.right + gap;
+      top = targetRect.top + (targetRect.height / 2) - (tooltipRect.height / 2);
+      break;
+    case 'left':
+      left = targetRect.left - tooltipRect.width - gap;
+      top = targetRect.top + (targetRect.height / 2) - (tooltipRect.height / 2);
+      break;
+    default:
+      left = targetRect.left + (targetRect.width / 2) - (tooltipRect.width / 2);
+      top = targetRect.bottom + gap;
+  }
+
+  // Keep within viewport
+  const viewportPadding = 10;
+  left = Math.max(viewportPadding, Math.min(left, window.innerWidth - tooltipRect.width - viewportPadding));
+  top = Math.max(viewportPadding, Math.min(top, window.innerHeight - tooltipRect.height - viewportPadding));
+
+  tourTooltip.style.left = `${left}px`;
+  tourTooltip.style.top = `${top}px`;
+}
+
+function nextTourStep() {
+  currentTourStep++;
+  if (currentTourStep < tourSteps.length) {
+    showTourStep(currentTourStep);
+  } else {
+    endTour(true);
+  }
+}
+
+function endTour(completed = false) {
+  tourOverlay.classList.remove('active');
+  tourSpotlight.style.display = 'none';
+  tourTooltip.style.display = 'none';
+  if (tourArrow) tourArrow.style.display = 'none';
+
+  if (completed) {
+    chrome.storage.sync.set({ tourCompleted: true });
+  }
+}
+
+// Make tour functions globally accessible for onclick handlers
+window.nextTourStep = nextTourStep;
+window.endTour = endTour;
+
+// Restart tour button
+if (restartTourBtn) {
+  restartTourBtn.addEventListener('click', () => {
+    startTour();
+  });
+}
+
+// Close tour on overlay click (outside spotlight)
+tourOverlay.addEventListener('click', (e) => {
+  if (e.target === tourOverlay) {
+    endTour();
+  }
+});
