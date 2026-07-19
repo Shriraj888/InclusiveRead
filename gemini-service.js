@@ -1,8 +1,8 @@
 // API Service - Supports both OpenRouter and Google Gemini
 
 const OPENROUTER_API_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
-const GEMINI_API_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemma-3-27b-it:generateContent';
-const OPENROUTER_MODEL = 'google/gemma-3-27b-it:free';
+const GEMINI_API_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemma-4-31b-it:generateContent';
+const OPENROUTER_MODEL = 'google/gemma-4-31b-it:free';
 
 /**
  * Get current API provider and key from storage
